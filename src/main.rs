@@ -1,4 +1,5 @@
 use axum::{Router, routing::get};
+use sqlx::PgPool;
 
 #[tokio::main]
 async fn main() {
@@ -8,8 +9,19 @@ async fn main() {
       dotenvy::dotenv().ok();
    }
 
-   let db_url = dotenvy::var("DATABASE_URL").expect("DATABASE_URL must be set");
-   println!("Connecting to database at: {}", db_url);
+   let database_url = dotenvy::var("DATABASE_URL").expect("DATABASE_URL must be set");
+
+   println!("Connecting to database at: {}", database_url);
+   let pool = PgPool::connect(&database_url)
+      .await
+      .expect("Failed to connect to database");
+
+   let row: (i32,) = sqlx::query_as("SELECT 1")
+      .fetch_one(&pool)
+      .await
+      .expect("Failed to execute query");
+
+   println!("Query result: {}", row.0);
 
    let app = Router::new().route("/", get(|| async { "Hello, World!" }));
 
