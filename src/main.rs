@@ -2,6 +2,8 @@ use axum::{Router, routing::get};
 
 #[tokio::main]
 async fn main() {
+   tracing_subscriber::fmt::init();
+
    if dotenvy::from_filename(".env.local").is_err() {
       dotenvy::dotenv().ok();
    }
