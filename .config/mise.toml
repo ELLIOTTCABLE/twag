@@ -1,0 +1,20 @@
+min_version = "2024.11.3"
+
+[tools]
+"rust" = "1.87"
+"cargo:sqlx-cli" = { version = "0.8", default-features = false, features = "native-tls,postgres" }
+
+[tasks.db-auth]
+description = "Queries Neon for database creds"
+outputs = ["../.env"]
+run = [
+   "echo \"DATABASE_URL='$(neonctl connection-string dev/ec --database-name twag --role-name twag_admin)'\" >> ../.env",
+   "chmod 600 ../.env",
+]
+
+[tasks.db-setup]
+description = "Initializes the database"
+depends = ["db-auth"]
+sources = ["../.env", "../migrations/*.sql"]
+env = { RUST_LOG = "trace" }
+run = "cd .. && sqlx database setup"
