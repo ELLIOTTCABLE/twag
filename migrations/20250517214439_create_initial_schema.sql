@@ -1,9 +1,9 @@
-CREATE TABLE IF NOT EXISTS twag_tags (
-   id CHAR(14) UNIQUE NOT NULL PRIMARY KEY,
-   target_url TEXT NOT NULL,
-   created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-   updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-   last_accessed TIMESTAMP WITH TIME ZONE,
-   access_count INTEGER DEFAULT 0,
-   last_seen_tap_count INTEGER,
+CREATE TABLE IF NOT EXISTS "twag_tags" (
+   "id" char(14) UNIQUE NOT NULL PRIMARY KEY,
+   "target_url" text NOT NULL,
+   "created_at" timestamp with time zone DEFAULT current_timestamp,
+   "updated_at" timestamp with time zone DEFAULT current_timestamp,
+   "last_accessed" timestamp with time zone,
+   "access_count" integer DEFAULT 0,
+   "last_seen_tap_count" integer
 );

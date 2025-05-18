@@ -1,0 +1,25 @@
+[sqlfluff]
+dialect = postgres
+warn_unused_ignores = True
+max_line_length = 100
+
+[sqlfluff:indentation]
+tab_space_size = 3
+
+[sqlfluff:rules:capitalisation.keywords]
+capitalisation_policy = upper
+[sqlfluff:rules:capitalisation.literals]
+capitalisation_policy = upper
+
+[sqlfluff:rules:capitalisation.identifiers]
+extended_capitalisation_policy = snake
+[sqlfluff:rules:capitalisation.functions]
+extended_capitalisation_policy = snake
+[sqlfluff:rules:capitalisation.types]
+extended_capitalisation_policy = snake
+
+[sqlfluff:rules:references.quoting]
+prefer_quoted_identifiers = True
+ignore_words = None
+ignore_words_regex = None
+case_sensitive = True
