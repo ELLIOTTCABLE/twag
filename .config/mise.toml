@@ -7,6 +7,7 @@ pipx.uvx = true
 [tools]
 "rust" = "1.87"
 "cargo:sqlx-cli" = { version = "0.8", default-features = false, features = "native-tls,postgres" }
+"cargo:cargo-watch" = "latest"
 
 # Pre-commit tooling
 # FIXME: Use the direct version of `hk` when the Aqua package is fixed
@@ -18,6 +19,11 @@ pipx.uvx = true
 # SQL formatting
 "uv" = "latest"
 "pipx:sqlfluff" = "latest"
+
+[tasks.watch]
+description = "Watches for changes in the source code and runs the server"
+env = { RUST_LOG = "trace" }
+run = "cargo watch -w src -x 'run'"
 
 [tasks.db-auth]
 description = "Queries Neon for database creds"
