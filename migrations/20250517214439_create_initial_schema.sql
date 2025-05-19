@@ -1,5 +1,8 @@
+CREATE DOMAIN "hex_14" AS varchar(14)
+CHECK ("value" ~ '^[0-9A-F]{14}$');
+
 CREATE TABLE IF NOT EXISTS "twag_tags" (
-   "id" char(14) UNIQUE NOT NULL PRIMARY KEY,
+   "id" hex_14 UNIQUE NOT NULL PRIMARY KEY,
    "target_url" text NOT NULL,
    "created_at" timestamp with time zone DEFAULT current_timestamp,
    "updated_at" timestamp with time zone DEFAULT current_timestamp,
