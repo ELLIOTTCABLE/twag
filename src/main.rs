@@ -1,6 +1,18 @@
 use axum::{Router, routing::get};
+use chrono::{DateTime, Utc};
 use sqlx::{Error, PgPool, Pool, Postgres};
 use tracing::{Level, info, trace};
+
+#[derive(sqlx::FromRow)]
+struct TwagTag {
+   id: String,
+   target_url: String,
+   created_at: DateTime<Utc>,
+   updated_at: DateTime<Utc>,
+   last_accessed: Option<DateTime<Utc>>,
+   access_count: i32,
+   last_seen_tap_count: Option<i32>,
+}
 
 async fn initialize_connection(database_url: &str) -> Result<Pool<Postgres>, Error> {
    info!(database_url, "Connecting to database");
