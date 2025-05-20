@@ -1,7 +1,12 @@
-use axum::{Router, extract::Path, http::StatusCode, routing::get};
+use axum::{
+   Router,
+   extract::{Path, State},
+   http::StatusCode,
+   routing::get,
+};
 use chrono::{DateTime, Utc};
 use lazy_regex::regex_captures;
-use sqlx::{Error, PgPool, Pool, Postgres};
+use sqlx::{Error, Pool, Postgres, postgres::PgPoolOptions};
 use tracing::{info, trace, warn};
 
 #[derive(sqlx::FromRow)]
@@ -17,12 +22,22 @@ struct TwagTag {
 
 async fn initialize_connection(database_url: &str) -> Result<Pool<Postgres>, Error> {
    info!(database_url, "Connecting to database");
-   let pool = PgPool::connect(database_url).await?;
+   let pool = PgPoolOptions::new()
+      .min_connections(1)
+      .max_connections(5)
+      .idle_timeout(std::time::Duration::from_secs(300))
+      .connect(database_url)
+      .await?;
 
    sqlx::query("SELECT 1").fetch_one(&pool).await?;
 
    trace!("Connection established");
    Ok(pool)
+}
+
+#[derive(Clone)]
+struct AppState {
+   pool: sqlx::PgPool,
 }
 
 #[tokio::main]
@@ -37,32 +52,51 @@ async fn main() {
 
    let database_url = dotenvy::var("DATABASE_URL").expect("DATABASE_URL must be set");
 
-   let _pool = initialize_connection(&database_url)
+   let pool = initialize_connection(&database_url)
       .await
       .expect("Failed to connect to database");
+
+   let app_state = AppState { pool };
 
    let app = Router::new()
       .route("/", get(|| async { "Hello, World!" }))
       // https://xz.ws/tag/055B88A23C1250
       // https://xz.ws/tag/055B88A23C1250x00000F
-      .route("/tag/{slug}", get(get_tag_by_id));
+      .route("/tag/{slug}", get(get_tag_by_id))
+      .with_state(app_state);
 
    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
    println!("Listening on http://{}", listener.local_addr().unwrap());
    axum::serve(listener, app).await.unwrap();
 }
 
-#[axum::debug_handler]
-async fn get_tag_by_id(Path(param): Path<String>) -> Result<String, StatusCode> {
-   if let Some((_, id, tap_count_str)) = regex_captures!(r"^([0-9A-F]{14})(?:x([0-9A-F]{6}))?$", &param) {
-      let tap_count = if tap_count_str.is_empty() {
-         None
-      } else {
-         Some(i32::from_str_radix(tap_count_str, 16).unwrap_or(0))
-      };
-      return Ok("Tag ID: ".to_string() + &id + " Tap Count: " + &tap_count.unwrap_or(0).to_string());
-   } else {
+async fn get_tag_by_id(State(state): State<AppState>, Path(param): Path<String>) -> Result<String, StatusCode> {
+   let Some((_, id, tap_count_str)) = regex_captures!(r"^([0-9A-F]{14})(?:x([0-9A-F]{6}))?$", &param) else {
       warn!("Invalid tag ID format");
       return Err(StatusCode::BAD_REQUEST);
-   }
+   };
+
+   let tap_count = (!tap_count_str.is_empty())
+      .then_some(tap_count_str)
+      .and_then(|s| i32::from_str_radix(s, 16).ok());
+
+   let Ok(mut conn) = state.pool.acquire().await else {
+      warn!("Failed to acquire database connection");
+      return Err(StatusCode::INTERNAL_SERVER_ERROR);
+   };
+
+   let tag = sqlx::query!("SELECT * FROM twag_tags WHERE id = $1", id)
+      .fetch_optional(&mut *conn)
+      .await
+      .map_err(|e| {
+         warn!("Failed to fetch tag from database: {:?}", e);
+         StatusCode::INTERNAL_SERVER_ERROR
+      })?
+      .ok_or_else(|| {
+         warn!("Tag not found");
+         StatusCode::NOT_FOUND
+      })?;
+
+   trace!("Tag found: {:?}", tag);
+   Ok("Tag ID: ".to_string() + id + " Tap Count: " + &tap_count.unwrap_or(0).to_string())
 }
