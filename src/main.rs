@@ -2,6 +2,7 @@ use axum::{
    Router,
    extract::{Path, State},
    http::StatusCode,
+   response::{IntoResponse, Response},
    routing::get,
 };
 use chrono::{DateTime, Utc};
@@ -70,7 +71,7 @@ async fn main() {
    axum::serve(listener, app).await.unwrap();
 }
 
-async fn get_tag_by_id(State(state): State<AppState>, Path(param): Path<String>) -> Result<String, StatusCode> {
+async fn get_tag_by_id(State(state): State<AppState>, Path(param): Path<String>) -> Result<Response, StatusCode> {
    let Some((_, id, tap_count_str)) = regex_captures!(r"^([0-9A-F]{14})(?:x([0-9A-F]{6}))?$", &param) else {
       warn!("Invalid tag ID format");
       return Err(StatusCode::BAD_REQUEST);
@@ -89,14 +90,18 @@ async fn get_tag_by_id(State(state): State<AppState>, Path(param): Path<String>)
       .fetch_optional(&mut *conn)
       .await
       .map_err(|e| {
-         warn!("Failed to fetch tag from database: {:?}", e);
+         warn!("Failed to fetch tag '{id}' from database: {:?}", e);
          StatusCode::INTERNAL_SERVER_ERROR
-      })?
-      .ok_or_else(|| {
-         warn!("Tag not found");
-         StatusCode::NOT_FOUND
       })?;
 
+   if tag.is_none() {
+      info!("Tag '{id}' not found");
+      return Ok(
+         axum::response::Redirect::temporary(&format!("/create/{}x{:06X}", id, tap_count.unwrap_or(0))).into_response(),
+      );
+   }
+   let tag = tag.unwrap();
+
    trace!("Tag found: {:?}", tag);
-   Ok("Tag ID: ".to_string() + id + " Tap Count: " + &tap_count.unwrap_or(0).to_string())
+   Ok(("Tag ID: ".to_string() + id + " Tap Count: " + &tap_count.unwrap_or(0).to_string()).into_response())
 }
