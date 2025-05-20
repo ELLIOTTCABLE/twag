@@ -39,3 +39,9 @@ depends = ["db-auth"]
 sources = ["../.env", "../migrations/*.sql"]
 env = { RUST_LOG = "trace" }
 run = "cd .. && sqlx database setup"
+
+[tasks.sqlx-prepare]
+description = "Cache schema for SQLx typechecking"
+depends = ["db-auth"]
+sources = ["../.env"]
+run = "cargo sqlx prepare"
