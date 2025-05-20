@@ -8,7 +8,12 @@ use axum::{
 use chrono::{DateTime, Utc};
 use lazy_regex::regex_captures;
 use sqlx::{Error, Pool, Postgres, postgres::PgPoolOptions};
-use tracing::{info, trace, warn};
+use tower::{Service, ServiceBuilder, ServiceExt};
+use tower_http::{
+   LatencyUnit,
+   trace::{DefaultMakeSpan, DefaultOnRequest, DefaultOnResponse, TraceLayer},
+};
+use tracing::{Level, info, trace, warn};
 
 #[derive(sqlx::FromRow)]
 struct TwagTag {
@@ -64,7 +69,17 @@ async fn main() {
       // https://xz.ws/tag/055B88A23C1250
       // https://xz.ws/tag/055B88A23C1250x00000F
       .route("/tag/{slug}", get(get_tag_by_id))
-      .with_state(app_state);
+      .with_state(app_state)
+      .layer(
+         TraceLayer::new_for_http()
+            .make_span_with(DefaultMakeSpan::new().level(Level::INFO))
+            .on_request(DefaultOnRequest::new().level(Level::INFO))
+            .on_response(
+               DefaultOnResponse::new()
+                  .level(Level::INFO)
+                  .latency_unit(LatencyUnit::Micros),
+            ),
+      );
 
    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
    println!("Listening on http://{}", listener.local_addr().unwrap());
