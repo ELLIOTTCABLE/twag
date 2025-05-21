@@ -16,16 +16,8 @@ use tower_http::{
 };
 use tracing::{Level, info, trace, warn};
 
-#[derive(sqlx::FromRow)]
-struct TwagTag {
-   id: String,
-   target_url: String,
-   created_at: DateTime<Utc>,
-   updated_at: DateTime<Utc>,
-   last_accessed: Option<DateTime<Utc>>,
-   access_count: i32,
-   last_seen_tap_count: Option<i32>,
-}
+mod models;
+use models::{Hex14, TwagTag};
 
 async fn initialize_connection(database_url: &str) -> Result<Pool<Postgres>, Error> {
    info!(database_url, "Connecting to database");
@@ -100,7 +92,7 @@ fn as_html(mut resp: Response) -> Response {
 
 #[derive(Deserialize)]
 struct TagCreateQuery {
-   id: String,
+   id: Hex14,
    #[serde(with = "SerHexOpt::<Compact>")]
    tap_count: Option<u32>,
    target_url: Option<String>,
@@ -129,11 +121,6 @@ async fn create_tag_page(
    let tap_count = param.tap_count;
    let target_url = &param.target_url;
 
-   if id.len() != 14 || !id.chars().all(|c| c.is_ascii_hexdigit()) {
-      warn!("Invalid tag ID format: {id}");
-      return Err(StatusCode::BAD_REQUEST);
-   }
-
    // TODO: Redirect to edit if exists
 
    let page = TagCreateTemplate {
@@ -155,11 +142,6 @@ async fn create_tag(
    let id = &param.id;
    let tap_count = form.tap_count.or(param.tap_count).unwrap_or(1);
    let target_url = &form.target_url.or(param.target_url);
-
-   if id.len() != 14 || !id.chars().all(|c| c.is_ascii_hexdigit()) {
-      warn!("Invalid tag ID format: {id}");
-      return Err(StatusCode::BAD_REQUEST);
-   }
 
    if target_url.is_none() {
       warn!("Target URL is missing");
@@ -183,10 +165,15 @@ async fn get_tag_by_id(
    extract::State(state): extract::State<AppState>,
    extract::Path(param): extract::Path<String>,
 ) -> Result<Response, StatusCode> {
-   let Some((_, id, tap_count_str)) = regex_captures!(r"^([0-9A-F]{14})(?:x([0-9A-F]{6}))?$", &param) else {
+   let Some((_, id_str, tap_count_str)) = regex_captures!(r"^([0-9A-F]{14})(?:x([0-9A-F]{6}))?$", &param) else {
       warn!("Invalid tag ID format");
       return Err(StatusCode::BAD_REQUEST);
    };
+
+   let id: Hex14 = id_str.try_into().map_err(|e| {
+      warn!("Failed to parse tag ID: {:?}", e);
+      StatusCode::BAD_REQUEST
+   })?;
 
    let tap_count = (!tap_count_str.is_empty())
       .then_some(tap_count_str)
@@ -197,7 +184,7 @@ async fn get_tag_by_id(
       return Err(StatusCode::INTERNAL_SERVER_ERROR);
    };
 
-   let tag = sqlx::query!("SELECT * FROM twag_tags WHERE id = $1", id)
+   let tag = sqlx::query!("SELECT * FROM twag_tags WHERE id = $1", &id)
       .fetch_optional(&mut *conn)
       .await
       .map_err(|e| {
@@ -215,5 +202,5 @@ async fn get_tag_by_id(
    let tag = tag.unwrap();
 
    trace!("Tag found: {:?}", tag);
-   Ok(("Tag ID: ".to_string() + id + " Tap Count: " + &tap_count.unwrap_or(0).to_string()).into_response())
+   Ok(format!("Tag ID: {} Tap Count: {}", id, tap_count.unwrap_or(0)).into_response())
 }

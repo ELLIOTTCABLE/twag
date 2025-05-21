@@ -2163,6 +2163,7 @@ dependencies = [
  "serde",
  "serde-hex",
  "sqlx",
+ "thiserror",
  "tokio",
  "tower",
  "tower-http",
