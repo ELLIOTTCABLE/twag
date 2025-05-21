@@ -1,7 +1,7 @@
+use askama::Template;
 use axum::{
-   Router,
-   extract::{Path, Query, State},
-   http::StatusCode,
+   Router, extract,
+   http::{StatusCode, header},
    response::{IntoResponse, Response},
    routing::{get, post},
 };
@@ -25,14 +25,6 @@ struct TwagTag {
    last_accessed: Option<DateTime<Utc>>,
    access_count: i32,
    last_seen_tap_count: Option<i32>,
-}
-
-#[derive(Deserialize)]
-struct TagCreateRequest {
-   id: String,
-   #[serde(with = "SerHexOpt::<Compact>")]
-   tap_count: Option<u32>,
-   target_url: Option<String>,
 }
 
 async fn initialize_connection(database_url: &str) -> Result<Pool<Postgres>, Error> {
@@ -77,7 +69,7 @@ async fn main() {
       .route("/", get(|| async { "Hello, World!" }))
       // GET https://xz.ws/tag/create?id=055B88A23C1250&tap_count=00000F
       .route("/tag/create", get(create_tag_page))
-      // POST https://xz.ws/tag/create?id=055B88A23C1250&tap_count=00000F&target_url=https://example.com
+      // POST https://xz.ws/tag/create?id=055B88A23C1250&tap_count=00000F: target_url=https://example.com
       .route("/tag/create", post(create_tag))
       // GET https://xz.ws/tag/055B88A23C1250
       // GET https://xz.ws/tag/055B88A23C1250x00000F
@@ -99,12 +91,42 @@ async fn main() {
    axum::serve(listener, app).await.unwrap();
 }
 
+fn as_html(mut resp: Response) -> Response {
+   resp
+      .headers_mut()
+      .insert(header::CONTENT_TYPE, "text/html; charset=utf-8".parse().unwrap());
+   resp
+}
+
+#[derive(Deserialize)]
+struct TagCreateQuery {
+   id: String,
+   #[serde(with = "SerHexOpt::<Compact>")]
+   tap_count: Option<u32>,
+   target_url: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct TagCreateForm {
+   #[serde(with = "SerHexOpt::<Compact>")]
+   #[serde(default)]
+   tap_count: Option<u32>,
+   target_url: Option<String>,
+}
+
+#[derive(Template)]
+#[template(path = "tag_create.html")]
+struct TagCreateTemplate<'a> {
+   id: &'a str,
+   tap_count: &'a Option<String>,
+}
+
 async fn create_tag_page(
-   State(state): State<AppState>,
-   Query(param): Query<TagCreateRequest>,
+   extract::State(state): extract::State<AppState>,
+   extract::Query(param): extract::Query<TagCreateQuery>,
 ) -> Result<Response, StatusCode> {
    let id = &param.id;
-   let tap_count = param.tap_count.unwrap_or(1);
+   let tap_count = param.tap_count;
    let target_url = &param.target_url;
 
    if id.len() != 14 || !id.chars().all(|c| c.is_ascii_hexdigit()) {
@@ -112,27 +134,27 @@ async fn create_tag_page(
       return Err(StatusCode::BAD_REQUEST);
    }
 
-   if target_url.is_none() {
-      warn!("Target URL is missing");
-      return Err(StatusCode::BAD_REQUEST);
-   }
+   // TODO: Redirect to edit if exists
 
-   let Ok(mut conn) = state.pool.acquire().await else {
-      warn!("Failed to acquire database connection");
-      return Err(StatusCode::INTERNAL_SERVER_ERROR);
+   let page = TagCreateTemplate {
+      id,
+      tap_count: &tap_count.map(|c| format!("{:06X}", c)),
    };
-
-   // NYI ...
-   Err(StatusCode::NOT_IMPLEMENTED)
+   let response = page.render().map_err(|e| {
+      warn!("Failed to render template: {:?}", e);
+      StatusCode::INTERNAL_SERVER_ERROR
+   })?;
+   Ok(as_html(response.into_response()))
 }
 
 async fn create_tag(
-   State(state): State<AppState>,
-   Query(param): Query<TagCreateRequest>,
+   extract::State(state): extract::State<AppState>,
+   extract::Query(param): extract::Query<TagCreateQuery>,
+   extract::Form(form): extract::Form<TagCreateForm>,
 ) -> Result<Response, StatusCode> {
    let id = &param.id;
-   let tap_count = param.tap_count.unwrap_or(1);
-   let target_url = &param.target_url;
+   let tap_count = form.tap_count.or(param.tap_count).unwrap_or(1);
+   let target_url = &form.target_url.or(param.target_url);
 
    if id.len() != 14 || !id.chars().all(|c| c.is_ascii_hexdigit()) {
       warn!("Invalid tag ID format: {id}");
@@ -144,16 +166,23 @@ async fn create_tag(
       return Err(StatusCode::BAD_REQUEST);
    }
 
+   info!(
+      "Creating tag with ID: {id}, tap_count: {tap_count}, target_url: {:?}",
+      target_url
+   );
+
    let Ok(mut conn) = state.pool.acquire().await else {
       warn!("Failed to acquire database connection");
       return Err(StatusCode::INTERNAL_SERVER_ERROR);
    };
 
-   // NYI ...
    Err(StatusCode::NOT_IMPLEMENTED)
 }
 
-async fn get_tag_by_id(State(state): State<AppState>, Path(param): Path<String>) -> Result<Response, StatusCode> {
+async fn get_tag_by_id(
+   extract::State(state): extract::State<AppState>,
+   extract::Path(param): extract::Path<String>,
+) -> Result<Response, StatusCode> {
    let Some((_, id, tap_count_str)) = regex_captures!(r"^([0-9A-F]{14})(?:x([0-9A-F]{6}))?$", &param) else {
       warn!("Invalid tag ID format");
       return Err(StatusCode::BAD_REQUEST);

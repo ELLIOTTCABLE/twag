@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+   <meta http-equiv="Content-Type" content="text/html; charset=utf8" />
+   <title>Creating {{ id }} ...</title>
+</head>
+<body>
+
+<h1>Creating {{ id }} ...</h1>
+
+<form method="post"
+{% if let Some(tap_count) = tap_count %}
+   action="/tag/create?id={{ id }}&tap_count={{ tap_count }}"
+{% else %}
+   action="/tag/create?id={{ id }}"
+{% endif %}
+>
+   <label for="url">URL:</label>
+   <input type="text" id="url" name="target_url" required />
+   <button type="submit">Create redirect</button>
+</form>
+
+</body>
+</html>
