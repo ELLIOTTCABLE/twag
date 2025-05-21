@@ -31,57 +31,41 @@ impl Hex14 {
       Ok(Hex14(s.to_uppercase()))
    }
 
-   pub fn as_str(&self) -> &str {
-      &self.0
-   }
+   pub fn as_str(&self) -> &str { &self.0 }
 }
 
 impl Deref for Hex14 {
    type Target = String;
 
-   fn deref(&self) -> &Self::Target {
-      &self.0
-   }
+   fn deref(&self) -> &Self::Target { &self.0 }
 }
 
 impl FromStr for Hex14 {
    type Err = Hex14Error;
 
-   fn from_str(s: &str) -> Result<Self, Self::Err> {
-      Hex14::new(s)
-   }
+   fn from_str(s: &str) -> Result<Self, Self::Err> { Hex14::new(s) }
 }
 
 impl From<Hex14> for String {
-   fn from(hex: Hex14) -> Self {
-      hex.0
-   }
+   fn from(hex: Hex14) -> Self { hex.0 }
 }
 
 impl AsRef<str> for Hex14 {
-   fn as_ref(&self) -> &str {
-      &self.0
-   }
+   fn as_ref(&self) -> &str { &self.0 }
 }
 
 impl<'a> TryFrom<&'a str> for Hex14 {
    type Error = Hex14Error;
 
-   fn try_from(s: &'a str) -> Result<Self, Self::Error> {
-      Self::new(s)
-   }
+   fn try_from(s: &'a str) -> Result<Self, Self::Error> { Self::new(s) }
 }
 
 impl std::fmt::Display for Hex14 {
-   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-      write!(f, "{}", self.0)
-   }
+   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result { write!(f, "{}", self.0) }
 }
 
 impl Hash for Hex14 {
-   fn hash<H: Hasher>(&self, state: &mut H) {
-      self.0.hash(state);
-   }
+   fn hash<H: Hasher>(&self, state: &mut H) { self.0.hash(state); }
 }
 
 #[derive(sqlx::FromRow)]
