@@ -1,14 +1,15 @@
 use axum::{
    Router,
-   extract::{Path, State},
+   extract::{Path, Query, State},
    http::StatusCode,
    response::{IntoResponse, Response},
-   routing::get,
+   routing::{get, post},
 };
 use chrono::{DateTime, Utc};
 use lazy_regex::regex_captures;
+use serde::Deserialize;
+use serde_hex::{Compact, SerHexOpt};
 use sqlx::{Error, Pool, Postgres, postgres::PgPoolOptions};
-use tower::{Service, ServiceBuilder, ServiceExt};
 use tower_http::{
    LatencyUnit,
    trace::{DefaultMakeSpan, DefaultOnRequest, DefaultOnResponse, TraceLayer},
@@ -24,6 +25,14 @@ struct TwagTag {
    last_accessed: Option<DateTime<Utc>>,
    access_count: i32,
    last_seen_tap_count: Option<i32>,
+}
+
+#[derive(Deserialize)]
+struct TagCreateRequest {
+   id: String,
+   #[serde(with = "SerHexOpt::<Compact>")]
+   tap_count: Option<u32>,
+   target_url: Option<String>,
 }
 
 async fn initialize_connection(database_url: &str) -> Result<Pool<Postgres>, Error> {
@@ -66,8 +75,12 @@ async fn main() {
 
    let app = Router::new()
       .route("/", get(|| async { "Hello, World!" }))
-      // https://xz.ws/tag/055B88A23C1250
-      // https://xz.ws/tag/055B88A23C1250x00000F
+      // GET https://xz.ws/tag/create?id=055B88A23C1250&tap_count=00000F
+      .route("/tag/create", get(create_tag_page))
+      // POST https://xz.ws/tag/create?id=055B88A23C1250&tap_count=00000F&target_url=https://example.com
+      .route("/tag/create", post(create_tag))
+      // GET https://xz.ws/tag/055B88A23C1250
+      // GET https://xz.ws/tag/055B88A23C1250x00000F
       .route("/tag/{slug}", get(get_tag_by_id))
       .with_state(app_state)
       .layer(
@@ -84,6 +97,60 @@ async fn main() {
    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
    println!("Listening on http://{}", listener.local_addr().unwrap());
    axum::serve(listener, app).await.unwrap();
+}
+
+async fn create_tag_page(
+   State(state): State<AppState>,
+   Query(param): Query<TagCreateRequest>,
+) -> Result<Response, StatusCode> {
+   let id = &param.id;
+   let tap_count = param.tap_count.unwrap_or(1);
+   let target_url = &param.target_url;
+
+   if id.len() != 14 || !id.chars().all(|c| c.is_ascii_hexdigit()) {
+      warn!("Invalid tag ID format: {id}");
+      return Err(StatusCode::BAD_REQUEST);
+   }
+
+   if target_url.is_none() {
+      warn!("Target URL is missing");
+      return Err(StatusCode::BAD_REQUEST);
+   }
+
+   let Ok(mut conn) = state.pool.acquire().await else {
+      warn!("Failed to acquire database connection");
+      return Err(StatusCode::INTERNAL_SERVER_ERROR);
+   };
+
+   // NYI ...
+   Err(StatusCode::NOT_IMPLEMENTED)
+}
+
+async fn create_tag(
+   State(state): State<AppState>,
+   Query(param): Query<TagCreateRequest>,
+) -> Result<Response, StatusCode> {
+   let id = &param.id;
+   let tap_count = param.tap_count.unwrap_or(1);
+   let target_url = &param.target_url;
+
+   if id.len() != 14 || !id.chars().all(|c| c.is_ascii_hexdigit()) {
+      warn!("Invalid tag ID format: {id}");
+      return Err(StatusCode::BAD_REQUEST);
+   }
+
+   if target_url.is_none() {
+      warn!("Target URL is missing");
+      return Err(StatusCode::BAD_REQUEST);
+   }
+
+   let Ok(mut conn) = state.pool.acquire().await else {
+      warn!("Failed to acquire database connection");
+      return Err(StatusCode::INTERNAL_SERVER_ERROR);
+   };
+
+   // NYI ...
+   Err(StatusCode::NOT_IMPLEMENTED)
 }
 
 async fn get_tag_by_id(State(state): State<AppState>, Path(param): Path<String>) -> Result<Response, StatusCode> {
@@ -111,9 +178,10 @@ async fn get_tag_by_id(State(state): State<AppState>, Path(param): Path<String>)
 
    if tag.is_none() {
       info!("Tag '{id}' not found");
-      return Ok(
-         axum::response::Redirect::temporary(&format!("/create/{}x{:06X}", id, tap_count.unwrap_or(0))).into_response(),
-      );
+      let create_url = tap_count
+         .map(|tap_count| format!("/tag/create?id={id}&tap_count={:06X}", tap_count))
+         .unwrap_or_else(|| format!("/tag/create?id={id}"));
+      return Ok(axum::response::Redirect::temporary(&create_url).into_response());
    }
    let tag = tag.unwrap();
 

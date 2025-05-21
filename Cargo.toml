@@ -9,6 +9,8 @@ chrono = "0.4.41"
 dotenvy = "0.15.7"
 lazy-regex = "3.4.1"
 regex = "1.11.1"
+serde = "1.0.219"
+serde-hex = "0.1.0"
 sqlx = { version = "0.8", features = [
    "runtime-tokio",
    "tls-native-tls",
