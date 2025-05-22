@@ -147,6 +147,7 @@ async fn create_tag(
       warn!("Target URL is missing");
       return Err(StatusCode::BAD_REQUEST);
    }
+   let target_url = target_url.as_ref().unwrap();
 
    info!(
       "Creating tag with ID: {id}, tap_count: {tap_count}, target_url: {:?}",
@@ -158,7 +159,21 @@ async fn create_tag(
       return Err(StatusCode::INTERNAL_SERVER_ERROR);
    };
 
-   Err(StatusCode::NOT_IMPLEMENTED)
+   // Create tag in the database
+   sqlx::query!(
+      r#"INSERT INTO twag_tags (id, target_url, access_count) VALUES ($1::hex_14, $2, $3)"#,
+      id as &Hex14,
+      target_url,
+      tap_count as i32,
+   )
+   .execute(&mut *conn)
+   .await
+   .map_err(|e| {
+      warn!("Failed to create tag in database: {:?}", e);
+      StatusCode::INTERNAL_SERVER_ERROR
+   })?;
+
+   Ok("Created!".into_response())
 }
 
 async fn get_tag_by_id(
