@@ -27,21 +27,22 @@ run = "cargo watch -w cargo.toml -w src -w templates --clear --exec 'run'"
 
 [tasks.db-auth]
 description = "Queries Neon for database creds"
-outputs = ["../.env"]
+outputs = [".env"]
 run = [
-   "echo \"DATABASE_URL='$(neonctl connection-string dev/ec --database-name twag --role-name twag_admin)'\" >> ../.env",
-   "chmod 600 ../.env",
+   "pwd",
+   "echo \"DATABASE_URL='$(neonctl connection-string dev/ec --database-name twag --role-name twag_admin)'\" >> .env",
+   "chmod 600 .env",
 ]
 
 [tasks.db-setup]
 description = "Initializes the database"
 depends = ["db-auth"]
-sources = ["../.env", "../migrations/*.sql"]
+sources = [".env", "migrations/*.sql"]
 env = { RUST_LOG = "trace" }
-run = "cd .. && sqlx database setup"
+run = "pwd && cd .. && sqlx database setup"
 
 [tasks.sqlx-prepare]
 description = "Cache schema for SQLx typechecking"
 depends = ["db-auth"]
-sources = ["../.env"]
-run = "cargo sqlx prepare"
+sources = [".env"]
+run = "pwd && cargo sqlx prepare"
