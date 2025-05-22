@@ -39,15 +39,39 @@ struct AppState {
    pool: sqlx::PgPool,
 }
 
+fn init_tracing() {
+   use tracing_subscriber::{EnvFilter, fmt};
+
+   let filter = EnvFilter::builder()
+      .with_default_directive(match dotenvy::var("RUST_FMT").as_deref() {
+         Ok("json") => Level::INFO.into(),
+         Ok("pretty") => Level::DEBUG.into(),
+         _ => Level::WARN.into(),
+      })
+      .parse_lossy(dotenvy::var("RUST_LOG").unwrap_or_else(|_| "info".into()));
+
+   let format = fmt::format().with_timer(fmt::time::ChronoUtc::rfc_3339());
+
+   match dotenvy::var("RUST_FMT").as_deref() {
+      Ok("json") => fmt()
+         .with_env_filter(filter)
+         .event_format(format.json().with_target(false).with_source_location(true))
+         .init(),
+      Ok("pretty") => fmt()
+         .with_env_filter(filter)
+         .event_format(format.pretty().with_source_location(true))
+         .init(),
+      _ => fmt().with_env_filter(filter).event_format(format).init(),
+   };
+}
+
 #[tokio::main]
 async fn main() {
-   tracing_subscriber::fmt()
-      .event_format(tracing_subscriber::fmt::format().with_file(true).with_line_number(true))
-      .init();
-
    if dotenvy::from_filename(".env.local").is_err() {
       dotenvy::dotenv().ok();
    }
+
+   init_tracing();
 
    let database_url = dotenvy::var("DATABASE_URL").expect("DATABASE_URL must be set");
 
