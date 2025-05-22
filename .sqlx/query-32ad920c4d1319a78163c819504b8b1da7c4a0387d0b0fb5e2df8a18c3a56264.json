@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "INSERT INTO twag_tags (id, target_url, access_count) VALUES ($1::hex_14, $2, $3)",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        {
+          "Custom": {
+            "name": "hex_14",
+            "kind": {
+              "Domain": "Varchar"
+            }
+          }
+        },
+        "Text",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "32ad920c4d1319a78163c819504b8b1da7c4a0387d0b0fb5e2df8a18c3a56264"
+}

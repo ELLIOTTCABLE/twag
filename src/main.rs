@@ -118,6 +118,7 @@ fn as_html(mut resp: Response) -> Response {
 struct TagCreateQuery {
    id: Hex14,
    #[serde(with = "SerHexOpt::<Compact>")]
+   #[serde(default)]
    tap_count: Option<u32>,
    target_url: Option<String>,
 }
@@ -232,7 +233,7 @@ async fn get_tag_by_id(
       })?;
 
    if tag.is_none() {
-      info!("Tag '{id}' not found");
+      info!("Tag '{id}' not found, redirecting to /tag/create");
       let create_url = tap_count
          .map(|tap_count| format!("/tag/create?id={id}&tap_count={:06X}", tap_count))
          .unwrap_or_else(|| format!("/tag/create?id={id}"));
@@ -240,6 +241,6 @@ async fn get_tag_by_id(
    }
    let tag = tag.unwrap();
 
-   trace!("Tag found: {:?}", tag);
-   Ok(format!("Tag ID: {} Tap Count: {}", id, tap_count.unwrap_or(0)).into_response())
+   trace!(tag = ?tag, "Tag found, redirecting to '{}'", tag.target_url);
+   Ok(axum::response::Redirect::permanent(&tag.target_url).into_response())
 }

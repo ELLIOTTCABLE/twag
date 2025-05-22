@@ -1,1 +1,2 @@
 **/Cargo.lock -diff merge=binary linguist-generated
+.sqlx/*.json -diff merge=binary linguist-generated
