@@ -9,7 +9,7 @@ axum = { version = "0.8.4", features = ["macros"] }
 chrono = "0.4.41"
 dotenvy = "0.15.7"
 lazy-regex = "3.4.1"
-notion-client = "1.0.8"
+notion-client = { git = "https://github.com/ELLIOTTCABLE/rust-notion-client.git", branch = "fix-db-icon" }
 regex = "1.11.1"
 serde = "1.0.219"
 serde-hex = "0.1.0"
@@ -30,3 +30,4 @@ tracing-subscriber = { version = "0.3", features = [
    "chrono",
    "json",
 ] }
+url = "2.5.4"

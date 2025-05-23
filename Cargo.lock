@@ -1285,8 +1285,7 @@ checksum = "72ef4a56884ca558e5ddb05a1d1e7e1bfd9a68d9ed024c21704cc98872dae1bb"
 [[package]]
 name = "notion-client"
 version = "1.0.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7d93fbf19b2e91b3b6be9deddf88b2592109bc40a020f5582d4dc1e2d72328c2"
+source = "git+https://github.com/ELLIOTTCABLE/rust-notion-client.git?branch=fix-db-icon#049349ec039dd57e0e9c5cdb7dbcddb5b3caed69"
 dependencies = [
  "chrono",
  "derive_builder",
@@ -2586,6 +2585,7 @@ dependencies = [
  "tower-http",
  "tracing",
  "tracing-subscriber",
+ "url",
 ]
 
 [[package]]

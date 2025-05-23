@@ -7,19 +7,27 @@ use axum::{
 };
 use chrono::{DateTime, Utc};
 use lazy_regex::regex_captures;
+use notion_client::{
+   NotionClientError,
+   endpoints::{
+      Client as Notion,
+      databases::query::request::{QueryDatabaseRequest, Sort, SortDirection, Timestamp},
+   },
+};
 use serde::Deserialize;
 use serde_hex::{Compact, SerHexOpt};
-use sqlx::{Error, Pool, Postgres, postgres::PgPoolOptions};
+use sqlx::{Pool, Postgres, postgres::PgPoolOptions};
 use tower_http::{
    LatencyUnit,
    trace::{DefaultMakeSpan, DefaultOnRequest, DefaultOnResponse, TraceLayer},
 };
 use tracing::{Level, info, trace, warn};
+use url::{Host, ParseError, Url};
 
 mod models;
 use models::{Hex14, TwagTag};
 
-async fn initialize_connection(database_url: &str) -> Result<Pool<Postgres>, Error> {
+async fn initialize_connection(database_url: &str) -> Result<Pool<Postgres>, sqlx::Error> {
    info!(database_url, "Connecting to database");
    let pool = PgPoolOptions::new()
       .min_connections(1)
@@ -30,13 +38,68 @@ async fn initialize_connection(database_url: &str) -> Result<Pool<Postgres>, Err
 
    sqlx::query("SELECT 1").fetch_one(&pool).await?;
 
-   trace!("Connection established");
+   info!("Postgres connection established");
    Ok(pool)
 }
 
-#[derive(Clone)]
-struct AppState {
-   pool: sqlx::PgPool,
+async fn parse_page_id_from_possible_url(input: &str) -> Result<String, String> {
+   let database_id = match Url::parse(input) {
+      Ok(url) => {
+         // Validate the URL is from Notion
+         match url.host() {
+            Some(Host::Domain("www.notion.so")) => (),
+            _ => {
+               return Err(format!(
+                  "Invalid Notion database ID '{input}': must be either a bare ID or a Notion URL"
+               ));
+            }
+         }
+
+         // Extract the database ID from the URL path
+         url.path_segments()
+            .and_then(|mut segments| segments.next_back())
+            .filter(|segment| !segment.is_empty())
+            .ok_or_else(|| format!("Invalid Notion URL '{input}': missing database ID in path"))?
+            .to_string()
+      }
+      Err(_) => input.to_string(),
+   };
+
+   if database_id.len() != 32 || !database_id.chars().all(|c| c.is_ascii_alphanumeric()) {
+      return Err(format!("Invalid Notion database ID '{input}'"));
+   }
+
+   Ok(database_id)
+}
+
+async fn validate_notion_databases(
+   client: &Notion,
+   things_db: &str,
+   containers_db: &str,
+) -> Result<(String, String), String> {
+   let things_db = parse_page_id_from_possible_url(things_db).await?;
+   let containers_db = parse_page_id_from_possible_url(containers_db).await?;
+   trace!(things_db, containers_db, "Parsed database IDs");
+
+   match client.databases.retrieve_a_database(&things_db).await {
+      Ok(schema) => trace!("Successfully connected to things database"),
+      Err(err) => {
+         trace!(err = %err, "Failed to connect to things database");
+         return Err(format!("Failed to validate things database {}: {:?}", things_db, err));
+      }
+   }
+
+   match client.databases.retrieve_a_database(&containers_db).await {
+      Ok(schema) => trace!("Successfully connected to containers database"),
+      Err(err) => {
+         return Err(format!(
+            "Failed to validate containers database {}: {:?}",
+            containers_db, err
+         ));
+      }
+   }
+   // trace!("Notion database response: {:?}", response);
+   Ok((things_db, containers_db))
 }
 
 fn init_tracing() {
@@ -48,7 +111,9 @@ fn init_tracing() {
          Ok("pretty") => Level::DEBUG.into(),
          _ => Level::WARN.into(),
       })
-      .parse_lossy(dotenvy::var("RUST_LOG").unwrap_or_else(|_| "info".into()));
+      .parse_lossy(dotenvy::var("RUST_LOG").unwrap_or_else(|_| "info".into()))
+      .add_directive("hyper::client=info".parse().unwrap())
+      .add_directive("hyper::proto=warn".parse().unwrap());
 
    let format = fmt::format().with_timer(fmt::time::ChronoUtc::rfc_3339());
 
@@ -65,22 +130,38 @@ fn init_tracing() {
    };
 }
 
+#[derive(Clone)]
+struct AppState {
+   pool: sqlx::PgPool,
+   client: Notion,
+}
+
 #[tokio::main]
 async fn main() {
-   if dotenvy::from_filename(".env.local").is_err() {
+   if dotenvy::from_filename(".env").is_err() {
       dotenvy::dotenv().ok();
    }
 
    init_tracing();
 
+   // TODO: Use a config library
    let database_url = dotenvy::var("DATABASE_URL").expect("DATABASE_URL must be set");
+   let notion_token = dotenvy::var("NOTION_TOKEN").expect("NOTION_TOKEN must be set");
+   let notion_things_db = dotenvy::var("NOTION_THINGS_DB").expect("NOTION_THINGS_DB must be set");
+   let notion_containers_db = dotenvy::var("NOTION_CONTAINERS_DB").expect("NOTION_CONTAINERS_DB must be set");
 
    let pool = initialize_connection(&database_url)
       .await
       .expect("Failed to connect to database");
 
-   let app_state = AppState { pool };
+   let client = Notion::new(notion_token.clone(), None).expect("Failed to create Notion client");
 
+   let (notion_things_db, notion_containers_db) =
+      validate_notion_databases(&client, &notion_things_db, &notion_containers_db)
+         .await
+         .unwrap();
+
+   let app_state = AppState { pool, client };
    let app = Router::new()
       .route("/", get(|| async { "Hello, World!" }))
       // GET https://xz.ws/tag/create?id=055B88A23C1250&tap_count=00000F
@@ -184,7 +265,6 @@ async fn create_tag(
       return Err(StatusCode::INTERNAL_SERVER_ERROR);
    };
 
-   // Create tag in the database
    sqlx::query!(
       r#"INSERT INTO twag_tags (id, target_url, access_count) VALUES ($1::hex_14, $2, $3)"#,
       id as &Hex14,
