@@ -6,7 +6,7 @@ use axum::{
    routing::{get, post},
 };
 use lazy_regex::regex_captures;
-use notion_client::endpoints::Client as Notion;
+use notion_client::{endpoints::Client as Notion, objects::database::DatabaseProperty};
 use serde::Deserialize;
 use serde_hex::{Compact, SerHexOpt};
 use sqlx::{Pool, Postgres, postgres::PgPoolOptions};
@@ -14,7 +14,7 @@ use tower_http::{
    LatencyUnit,
    trace::{DefaultMakeSpan, DefaultOnRequest, DefaultOnResponse, TraceLayer},
 };
-use tracing::{Level, info, trace, warn};
+use tracing::{Level, debug, info, trace, warn};
 use url::{Host, Url};
 
 mod models;
@@ -69,13 +69,50 @@ async fn validate_notion_databases(
    client: &Notion,
    things_db: &str,
    containers_db: &str,
+   things_column_name: &str,
+   containers_column_name: &str,
 ) -> Result<(String, String), String> {
    let things_db = parse_page_id_from_possible_url(things_db).await?;
    let containers_db = parse_page_id_from_possible_url(containers_db).await?;
    trace!(things_db, containers_db, "Parsed database IDs");
 
    match client.databases.retrieve_a_database(&things_db).await {
-      Ok(_schema) => trace!("Successfully connected to things database"),
+      Ok(schema) => {
+         debug!(?schema, "Successfully connected to things database");
+
+         // Validate the relation property exists and points to containers_db
+         let location_property = schema
+            .properties
+            .get(things_column_name)
+            .ok_or_else(|| format!("Missing required property '{}' in things database", things_column_name))?;
+
+         match location_property {
+            DatabaseProperty::Relation { relation, .. } => {
+               let actual_db_id = relation
+                  .database_id
+                  .as_ref()
+                  .ok_or_else(|| format!("'{}' property is missing database_id", things_column_name))?;
+
+               if actual_db_id != &containers_db {
+                  return Err(format!(
+                     "'{}' property points to wrong database: expected {}, got {}",
+                     things_column_name, containers_db, actual_db_id
+                  ));
+               }
+
+               debug!(
+                  "Validated '{}' property points to containers database",
+                  things_column_name
+               );
+            }
+            _ => {
+               return Err(format!(
+                  "'{}' property must be a relation type, found: {:?}",
+                  things_column_name, location_property
+               ));
+            }
+         }
+      }
       Err(err) => {
          trace!(err = %err, "Failed to connect to things database");
          return Err(format!("Failed to validate things database {}: {:?}", things_db, err));
@@ -83,7 +120,7 @@ async fn validate_notion_databases(
    }
 
    match client.databases.retrieve_a_database(&containers_db).await {
-      Ok(_schema) => trace!("Successfully connected to containers database"),
+      Ok(schema) => debug!(?schema, "Successfully connected to containers database"),
       Err(err) => {
          return Err(format!(
             "Failed to validate containers database {}: {:?}",
@@ -142,7 +179,10 @@ async fn main() {
    let database_url = dotenvy::var("DATABASE_URL").expect("DATABASE_URL must be set");
    let notion_token = dotenvy::var("NOTION_TOKEN").expect("NOTION_TOKEN must be set");
    let notion_things_db = dotenvy::var("NOTION_THINGS_DB").expect("NOTION_THINGS_DB must be set");
+   let notion_things_column = dotenvy::var("NOTION_THINGS_COLUMN_NAME").expect("NOTION_THINGS_COLUMN_NAME must be set");
    let notion_containers_db = dotenvy::var("NOTION_CONTAINERS_DB").expect("NOTION_CONTAINERS_DB must be set");
+   let notion_containers_column =
+      dotenvy::var("NOTION_CONTAINERS_COLUMN_NAME").expect("NOTION_CONTAINERS_COLUMN_NAME must be set");
 
    let pool = initialize_connection(&database_url)
       .await
@@ -150,10 +190,15 @@ async fn main() {
 
    let client = Notion::new(notion_token.clone(), None).expect("Failed to create Notion client");
 
-   let (_notion_things_db, _notion_containers_db) =
-      validate_notion_databases(&client, &notion_things_db, &notion_containers_db)
-         .await
-         .unwrap();
+   let (_notion_things_db, _notion_containers_db) = validate_notion_databases(
+      &client,
+      &notion_things_db,
+      &notion_containers_db,
+      &notion_things_column,
+      &notion_containers_column,
+   )
+   .await
+   .unwrap();
 
    let app_state = AppState { pool, client };
    let app = Router::new()

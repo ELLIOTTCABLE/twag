@@ -23,7 +23,7 @@ pipx.uvx = true
 [tasks.watch]
 description = "Watches for changes in the source code and runs the server"
 env = { RUST_LOG = "trace", RUST_FMT = "pretty", RUSTFLAGS = "-A dead_code -A unused_variables -A unused_imports" }
-run = "cargo watch -w cargo.toml -w src -w templates --clear --exec 'run'"
+run = "cargo watch -w .env -w cargo.toml -w src -w templates --clear --exec 'run'"
 
 [tasks.db-auth]
 description = "Queries Neon for database creds"
