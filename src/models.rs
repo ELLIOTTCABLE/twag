@@ -270,3 +270,179 @@ pub struct TwagTag {
    pub access_count: i32,
    pub last_seen_tap_count: Option<i32>,
 }
+
+#[cfg(test)]
+mod tests {
+   use super::*;
+
+   mod hex14_tests {
+      use super::*;
+
+      #[test]
+      fn test_hex14_validation_and_conversion() {
+         // Valid creation and case conversion
+         let hex = Hex14::new("a1b2c3d4e5f678").unwrap();
+         assert_eq!(hex.as_str(), "A1B2C3D4E5F678");
+
+         // Length validation
+         assert!(matches!(Hex14::new("A1B2C3"), Err(Hex14Error::InvalidLength(_))));
+         assert!(matches!(
+            Hex14::new("A1B2C3D4E5F67890"),
+            Err(Hex14Error::InvalidLength(_))
+         ));
+
+         // Character validation
+         assert!(matches!(
+            Hex14::new("G1B2C3D4E5F678"),
+            Err(Hex14Error::InvalidCharacter(_))
+         ));
+      }
+
+      #[test]
+      fn test_hex14_string_traits() {
+         let hex: Hex14 = "A1B2C3D4E5F678".parse().unwrap();
+
+         // Conversion traits
+         let s: String = hex.clone().into();
+         assert_eq!(s, "A1B2C3D4E5F678");
+
+         // Equality with strings
+         assert_eq!(hex, "A1B2C3D4E5F678");
+         assert_eq!(hex, "A1B2C3D4E5F678".to_string());
+      }
+   }
+
+   mod notion_page_id_tests {
+      use super::*;
+
+      #[test]
+      fn test_notion_page_id_validation() {
+         // Valid 32-character ID
+         let id = NotionPageId::new("a1b2c3d4e5f67890abcdef1234567890").unwrap();
+         assert_eq!(id.as_str(), "a1b2c3d4-e5f6-7890-abcd-ef1234567890");
+
+         // Valid UUID with different case works
+         let valid_uuid = "A1B2C3D4-E5F6-7890-ABCD-EF1234567890";
+         let id = NotionPageId::new(valid_uuid).unwrap();
+         assert_eq!(id.as_str(), "a1b2c3d4-e5f6-7890-abcd-ef1234567890");
+
+         // Invalid length
+         assert!(matches!(
+            NotionPageId::new("a1b2c3d4e5f678"),
+            Err(NotionPageIdError::InvalidId { .. })
+         ));
+
+         // Invalid characters
+         assert!(matches!(
+            NotionPageId::new("g1b2c3d4e5f67890abcdef1234567890"),
+            Err(NotionPageIdError::InvalidId { .. })
+         ));
+
+         // Not a UUID at all
+         assert!(matches!(
+            NotionPageId::new("not-a-valid-uuid-at-all"),
+            Err(NotionPageIdError::InvalidId { .. })
+         ));
+
+         // Too short hyphenated UUID
+         assert!(matches!(
+            NotionPageId::new("a1b2c3d4-e5f6-7890-abcd"),
+            Err(NotionPageIdError::InvalidId { .. })
+         ));
+      }
+
+      #[test]
+      fn test_notion_page_id_url_parsing() {
+         // Simple URL
+         let url = "https://www.notion.so/a1b2c3d4e5f67890abcdef1234567890";
+         let id = NotionPageId::new(url).unwrap();
+         assert_eq!(id.as_str(), "a1b2c3d4-e5f6-7890-abcd-ef1234567890");
+
+         // Complex URL with query params and fragment
+         let url = "https://www.notion.so/workspace/page-a1b2c3d4e5f67890abcdef1234567890?v=abc123&foo=bar#section";
+         let id = NotionPageId::new(url).unwrap();
+         assert_eq!(id.as_str(), "a1b2c3d4-e5f6-7890-abcd-ef1234567890");
+
+         // URL without valid ID
+         let url = "https://www.notion.so/some-page";
+         assert!(matches!(
+            NotionPageId::new(url),
+            Err(NotionPageIdError::InvalidId { .. })
+         ));
+
+         // Non-Notion domain
+         assert!(matches!(
+            NotionPageId::new("https://example.com/a1b2c3d4e5f67890abcdef1234567890"),
+            Err(NotionPageIdError::InvalidFormat { .. })
+         ));
+      }
+
+      #[test]
+      fn test_notion_page_id_string_traits() {
+         let id: NotionPageId = "a1b2c3d4e5f67890abcdef1234567890".parse().unwrap();
+
+         // String conversion and equality
+         let s: String = id.clone().into();
+         assert_eq!(s, "a1b2c3d4-e5f6-7890-abcd-ef1234567890");
+         assert_eq!(id, "a1b2c3d4-e5f6-7890-abcd-ef1234567890");
+      }
+
+      #[test]
+      fn test_notion_page_id_raw_format() {
+         let id = NotionPageId::new("a1b2c3d4e5f67890abcdef1234567890").unwrap();
+         assert_eq!(id.as_raw(), "a1b2c3d4e5f67890abcdef1234567890");
+      }
+
+      #[test]
+      fn test_notion_page_id_hash_and_clone() {
+         use std::collections::HashMap;
+         let id1 = NotionPageId::new("a1b2c3d4e5f67890abcdef1234567890").unwrap();
+         let id2 = id1.clone();
+
+         let mut map = HashMap::new();
+         map.insert(id1, "value");
+         assert_eq!(map.len(), 1);
+         assert_eq!(id2.as_str(), "a1b2c3d4-e5f6-7890-abcd-ef1234567890");
+      }
+
+      #[test]
+      fn test_notion_page_id_edge_cases() {
+         // UUID with mixed case
+         let mixed_case_uuid = "A1B2c3d4-E5F6-7890-ABCD-ef1234567890";
+         let id1 = NotionPageId::new(mixed_case_uuid).unwrap();
+         assert_eq!(id1.as_str(), "a1b2c3d4-e5f6-7890-abcd-ef1234567890");
+
+         // Invalid cases should still fail
+         assert!(matches!(
+            NotionPageId::new("https://www.notion.so/page-with-invalid-id-g1b2c3d4e5f67890abcdef1234567890"),
+            Err(NotionPageIdError::InvalidId { .. })
+         ));
+
+         assert!(matches!(
+            NotionPageId::new("https://www.notion.so/page-with-short-id-a1b2c3d4e5f67890"),
+            Err(NotionPageIdError::InvalidId { .. })
+         ));
+      }
+
+      #[test]
+      fn test_notion_page_id_uuid_validation() {
+         // Test that invalid UUIDs are properly rejected
+         assert!(matches!(
+            NotionPageId::new("not-a-valid-uuid-at-all"),
+            Err(NotionPageIdError::InvalidId { .. })
+         ));
+
+         // Test that malformed UUIDs are rejected
+         assert!(matches!(
+            NotionPageId::new("a1b2c3d4-e5f6-7890-abcd-ef123456789g"), // 'g' is not hex
+            Err(NotionPageIdError::InvalidId { .. })
+         ));
+
+         // Test that UUIDs with wrong length are rejected
+         assert!(matches!(
+            NotionPageId::new("a1b2c3d4-e5f6-7890-abcd"), // too short
+            Err(NotionPageIdError::InvalidId { .. })
+         ));
+      }
+   }
+}
