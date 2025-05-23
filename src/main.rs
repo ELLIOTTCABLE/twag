@@ -15,10 +15,9 @@ use tower_http::{
    trace::{DefaultMakeSpan, DefaultOnRequest, DefaultOnResponse, TraceLayer},
 };
 use tracing::{Level, debug, info, trace, warn};
-use url::{Host, Url};
 
 mod models;
-use models::Hex14;
+use models::{Hex14, NotionPageId};
 
 async fn initialize_connection(database_url: &str) -> Result<Pool<Postgres>, sqlx::Error> {
    info!(database_url, "Connecting to database");
@@ -35,41 +34,11 @@ async fn initialize_connection(database_url: &str) -> Result<Pool<Postgres>, sql
    Ok(pool)
 }
 
-async fn parse_page_id_from_possible_url(input: &str) -> Result<String, String> {
-   let database_id = match Url::parse(input) {
-      Ok(url) => {
-         // Validate the URL is from Notion
-         match url.host() {
-            Some(Host::Domain("www.notion.so")) => (),
-            _ => {
-               return Err(format!(
-                  "Invalid Notion database ID '{input}': must be either a bare ID or a Notion URL"
-               ));
-            }
-         }
-
-         // Extract the database ID from the URL path
-         url.path_segments()
-            .and_then(|mut segments| segments.next_back())
-            .filter(|segment| !segment.is_empty())
-            .ok_or_else(|| format!("Invalid Notion URL '{input}': missing database ID in path"))?
-            .to_string()
-      }
-      Err(_) => input.to_string(),
-   };
-
-   if database_id.len() != 32 || !database_id.chars().all(|c| c.is_ascii_alphanumeric()) {
-      return Err(format!("Invalid Notion database ID '{input}'"));
-   }
-
-   Ok(database_id)
-}
-
 async fn validate_database_relation(
    client: &Notion,
-   database_id: &str,
+   database_id: &NotionPageId,
    property_name: &str,
-   expected_target_db: &str,
+   expected_target_db: &NotionPageId,
 ) -> Result<(), String> {
    match client.databases.retrieve_a_database(database_id).await {
       Ok(schema) => {
@@ -112,19 +81,15 @@ async fn validate_database_relation(
 
 async fn validate_notion_databases(
    client: &Notion,
-   things_db: &str,
-   containers_db: &str,
+   things_db: &NotionPageId,
+   containers_db: &NotionPageId,
    things_column_name: &str,
    containers_column_name: &str,
-) -> Result<(String, String), String> {
-   let things_db = parse_page_id_from_possible_url(things_db).await?;
-   let containers_db = parse_page_id_from_possible_url(containers_db).await?;
-   trace!(things_db, containers_db, "Parsed database IDs");
+) -> Result<(), String> {
+   validate_database_relation(client, things_db, things_column_name, containers_db).await?;
+   validate_database_relation(client, containers_db, containers_column_name, things_db).await?;
 
-   validate_database_relation(client, &things_db, things_column_name, &containers_db).await?;
-   validate_database_relation(client, &containers_db, containers_column_name, &things_db).await?;
-
-   Ok((things_db, containers_db))
+   Ok(())
 }
 
 fn init_tracing() {
@@ -173,10 +138,13 @@ async fn main() {
    // TODO: Use a config library
    let database_url = dotenvy::var("DATABASE_URL").expect("DATABASE_URL must be set");
    let notion_token = dotenvy::var("NOTION_TOKEN").expect("NOTION_TOKEN must be set");
-   let notion_things_db = dotenvy::var("NOTION_THINGS_DB").expect("NOTION_THINGS_DB must be set");
-   let notion_things_column = dotenvy::var("NOTION_THINGS_COLUMN_NAME").expect("NOTION_THINGS_COLUMN_NAME must be set");
-   let notion_containers_db = dotenvy::var("NOTION_CONTAINERS_DB").expect("NOTION_CONTAINERS_DB must be set");
-   let notion_containers_column =
+   let things_ndb = NotionPageId::new(dotenvy::var("NOTION_THINGS_DB").expect("NOTION_THINGS_DB must be set"))
+      .expect("Invalid NOTION_THINGS_DB format");
+   let things_column = dotenvy::var("NOTION_THINGS_COLUMN_NAME").expect("NOTION_THINGS_COLUMN_NAME must be set");
+   let containers_ndb =
+      NotionPageId::new(dotenvy::var("NOTION_CONTAINERS_DB").expect("NOTION_CONTAINERS_DB must be set"))
+         .expect("Invalid NOTION_CONTAINERS_DB format");
+   let containers_column =
       dotenvy::var("NOTION_CONTAINERS_COLUMN_NAME").expect("NOTION_CONTAINERS_COLUMN_NAME must be set");
 
    let pool = initialize_connection(&database_url)
@@ -185,15 +153,17 @@ async fn main() {
 
    let client = Notion::new(notion_token.clone(), None).expect("Failed to create Notion client");
 
-   let (_notion_things_db, _notion_containers_db) = validate_notion_databases(
+   trace!(%things_ndb, %containers_ndb, "Parsed database IDs");
+   validate_notion_databases(
       &client,
-      &notion_things_db,
-      &notion_containers_db,
-      &notion_things_column,
-      &notion_containers_column,
+      &things_ndb,
+      &containers_ndb,
+      &things_column,
+      &containers_column,
    )
    .await
    .unwrap();
+   trace!(things_column, containers_column, "Validated Notion database relations");
 
    let app_state = AppState { pool, client };
    let app = Router::new()
