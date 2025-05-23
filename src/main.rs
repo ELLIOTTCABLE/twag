@@ -5,15 +5,8 @@ use axum::{
    response::{IntoResponse, Response},
    routing::{get, post},
 };
-use chrono::{DateTime, Utc};
 use lazy_regex::regex_captures;
-use notion_client::{
-   NotionClientError,
-   endpoints::{
-      Client as Notion,
-      databases::query::request::{QueryDatabaseRequest, Sort, SortDirection, Timestamp},
-   },
-};
+use notion_client::endpoints::Client as Notion;
 use serde::Deserialize;
 use serde_hex::{Compact, SerHexOpt};
 use sqlx::{Pool, Postgres, postgres::PgPoolOptions};
@@ -22,10 +15,10 @@ use tower_http::{
    trace::{DefaultMakeSpan, DefaultOnRequest, DefaultOnResponse, TraceLayer},
 };
 use tracing::{Level, info, trace, warn};
-use url::{Host, ParseError, Url};
+use url::{Host, Url};
 
 mod models;
-use models::{Hex14, TwagTag};
+use models::Hex14;
 
 async fn initialize_connection(database_url: &str) -> Result<Pool<Postgres>, sqlx::Error> {
    info!(database_url, "Connecting to database");
@@ -82,7 +75,7 @@ async fn validate_notion_databases(
    trace!(things_db, containers_db, "Parsed database IDs");
 
    match client.databases.retrieve_a_database(&things_db).await {
-      Ok(schema) => trace!("Successfully connected to things database"),
+      Ok(_schema) => trace!("Successfully connected to things database"),
       Err(err) => {
          trace!(err = %err, "Failed to connect to things database");
          return Err(format!("Failed to validate things database {}: {:?}", things_db, err));
@@ -90,7 +83,7 @@ async fn validate_notion_databases(
    }
 
    match client.databases.retrieve_a_database(&containers_db).await {
-      Ok(schema) => trace!("Successfully connected to containers database"),
+      Ok(_schema) => trace!("Successfully connected to containers database"),
       Err(err) => {
          return Err(format!(
             "Failed to validate containers database {}: {:?}",
@@ -130,6 +123,7 @@ fn init_tracing() {
    };
 }
 
+#[allow(dead_code)]
 #[derive(Clone)]
 struct AppState {
    pool: sqlx::PgPool,
@@ -156,7 +150,7 @@ async fn main() {
 
    let client = Notion::new(notion_token.clone(), None).expect("Failed to create Notion client");
 
-   let (notion_things_db, notion_containers_db) =
+   let (_notion_things_db, _notion_containers_db) =
       validate_notion_databases(&client, &notion_things_db, &notion_containers_db)
          .await
          .unwrap();
@@ -220,7 +214,7 @@ struct TagCreateTemplate<'a> {
 }
 
 async fn create_tag_page(
-   extract::State(state): extract::State<AppState>,
+   extract::State(_state): extract::State<AppState>,
    extract::Query(param): extract::Query<TagCreateQuery>,
 ) -> Result<Response, StatusCode> {
    let id = &param.id;

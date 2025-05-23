@@ -68,6 +68,7 @@ impl Hash for Hex14 {
    fn hash<H: Hasher>(&self, state: &mut H) { self.0.hash(state); }
 }
 
+#[allow(dead_code)]
 #[derive(sqlx::FromRow)]
 pub struct TwagTag {
    pub id: Hex14,
