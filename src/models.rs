@@ -4,6 +4,7 @@ use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 use std::str::FromStr;
 use url::{Host, Url};
+use uuid::Uuid;
 
 /// A type representing a fixed-length, 14-character hexadecimal string.
 #[derive(sqlx::Type, Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -103,7 +104,7 @@ pub enum NotionPageIdError {
    InvalidFormat { input: String },
    #[error("Invalid Notion URL '{input}': missing page ID in path")]
    MissingPageId { input: String },
-   #[error("Invalid Notion page ID '{input}': must be 32 alphanumeric characters")]
+   #[error("Invalid Notion page ID '{input}': must be 32 hex characters")]
    InvalidId { input: String },
 }
 
@@ -119,7 +120,7 @@ impl NotionPageId {
    }
 
    fn parse_page_id_from_possible_url(input: &str) -> Result<String, NotionPageIdError> {
-      let database_id = match Url::parse(input) {
+      let raw_id = match Url::parse(input) {
          Ok(url) => {
             // Validate the URL is from Notion
             match url.host() {
@@ -131,25 +132,66 @@ impl NotionPageId {
                }
             }
 
-            // Extract the database ID from the URL path
-            url.path_segments()
+            // Extract the last path segment
+            let last_segment = url
+               .path_segments()
                .and_then(|mut segments| segments.next_back())
                .filter(|segment| !segment.is_empty())
                .ok_or_else(|| NotionPageIdError::MissingPageId {
                   input: input.to_string(),
-               })?
-               .to_string()
+               })?;
+
+            // Extract ID from the segment (handles both bare IDs and page-name-prefixed IDs)
+            Self::extract_id_from_segment(last_segment)?
          }
-         Err(_) => input.to_string(),
+         Err(_) => {
+            // Not a URL, treat as direct ID input
+            Self::extract_id_from_segment(input)?
+         }
       };
 
-      if database_id.len() != 32 || !database_id.chars().all(|c| c.is_ascii_alphanumeric()) {
-         return Err(NotionPageIdError::InvalidId {
-            input: input.to_string(),
-         });
+      Ok(raw_id)
+   }
+
+   fn extract_id_from_segment(segment: &str) -> Result<String, NotionPageIdError> {
+      // First, try to parse as a UUID (handles both hyphenated and non-hyphenated)
+      if let Ok(uuid) = Self::try_parse_as_uuid(segment) {
+         return Ok(uuid.simple().to_string());
       }
 
-      Ok(database_id)
+      // Case 2: Contains a 32-character ID at the end (page-name-prefixed)
+      // Look for a 32-character hex suffix
+      let cleaned = segment.replace('-', "");
+      if cleaned.len() > 32 {
+         let suffix = &cleaned[cleaned.len() - 32..];
+         if let Ok(uuid) = Self::try_parse_as_uuid(suffix) {
+            return Ok(uuid.simple().to_string());
+         }
+      }
+
+      // If we can't extract a valid ID, return an error
+      Err(NotionPageIdError::InvalidId {
+         input: segment.to_string(),
+      })
+   }
+
+   fn try_parse_as_uuid(input: &str) -> Result<Uuid, uuid::Error> {
+      // Check if the input is a valid UUID (32 hex characters), missing the hyphens
+      let input = if input.len() == 32 && input.chars().all(|c| c.is_ascii_hexdigit()) {
+         // Format as hyphenated UUID and parse
+         format!(
+            "{}-{}-{}-{}-{}",
+            &input[0..8],
+            &input[8..12],
+            &input[12..16],
+            &input[16..20],
+            &input[20..32]
+         )
+      } else {
+         input.to_string()
+      };
+
+      Uuid::try_parse(&input)
    }
 
    fn format_as_uuid(id: &str) -> Result<String, NotionPageIdError> {
@@ -157,17 +199,11 @@ impl NotionPageId {
          return Err(NotionPageIdError::InvalidId { input: id.to_string() });
       }
 
-      // Format as UUID: 8-4-4-4-12
-      let formatted = format!(
-         "{}-{}-{}-{}-{}",
-         &id[0..8],
-         &id[8..12],
-         &id[12..16],
-         &id[16..20],
-         &id[20..32]
-      );
+      // Parse the 32-character hex string as a UUID
+      let uuid = Self::try_parse_as_uuid(id).map_err(|_| NotionPageIdError::InvalidId { input: id.to_string() })?;
 
-      Ok(formatted)
+      // Return as lowercase hyphenated UUID
+      Ok(uuid.hyphenated().to_string().to_lowercase())
    }
 
    pub fn as_str(&self) -> &str { &self.0 }
