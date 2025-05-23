@@ -65,6 +65,51 @@ async fn parse_page_id_from_possible_url(input: &str) -> Result<String, String> 
    Ok(database_id)
 }
 
+async fn validate_database_relation(
+   client: &Notion,
+   database_id: &str,
+   property_name: &str,
+   expected_target_db: &str,
+) -> Result<(), String> {
+   match client.databases.retrieve_a_database(database_id).await {
+      Ok(schema) => {
+         debug!(?schema, "Successfully connected to database");
+
+         // Validate the relation property exists and points to expected_target_db
+         let property = schema
+            .properties
+            .get(property_name)
+            .ok_or_else(|| format!("Missing required property '{}' in database", property_name))?;
+
+         match property {
+            DatabaseProperty::Relation { relation, .. } => {
+               let actual_db_id = relation.database_id.as_ref().unwrap();
+
+               if actual_db_id != expected_target_db {
+                  return Err(format!(
+                     "'{}' property points to wrong database: expected {}, got {}",
+                     property_name, expected_target_db, actual_db_id
+                  ));
+               }
+
+               trace!("Validated '{}' property points to target database", property_name);
+            }
+            _ => {
+               return Err(format!(
+                  "'{}' property must be a relation type, found: {:?}",
+                  property_name, property
+               ));
+            }
+         }
+      }
+      Err(err) => {
+         debug!(err = %err, "Failed to connect to database");
+         return Err(format!("Failed to validate database {}: {:?}", database_id, err));
+      }
+   }
+   Ok(())
+}
+
 async fn validate_notion_databases(
    client: &Notion,
    things_db: &str,
@@ -76,59 +121,9 @@ async fn validate_notion_databases(
    let containers_db = parse_page_id_from_possible_url(containers_db).await?;
    trace!(things_db, containers_db, "Parsed database IDs");
 
-   match client.databases.retrieve_a_database(&things_db).await {
-      Ok(schema) => {
-         debug!(?schema, "Successfully connected to things database");
+   validate_database_relation(client, &things_db, things_column_name, &containers_db).await?;
+   validate_database_relation(client, &containers_db, containers_column_name, &things_db).await?;
 
-         // Validate the relation property exists and points to containers_db
-         let location_property = schema
-            .properties
-            .get(things_column_name)
-            .ok_or_else(|| format!("Missing required property '{}' in things database", things_column_name))?;
-
-         match location_property {
-            DatabaseProperty::Relation { relation, .. } => {
-               let actual_db_id = relation
-                  .database_id
-                  .as_ref()
-                  .ok_or_else(|| format!("'{}' property is missing database_id", things_column_name))?;
-
-               if actual_db_id != &containers_db {
-                  return Err(format!(
-                     "'{}' property points to wrong database: expected {}, got {}",
-                     things_column_name, containers_db, actual_db_id
-                  ));
-               }
-
-               debug!(
-                  "Validated '{}' property points to containers database",
-                  things_column_name
-               );
-            }
-            _ => {
-               return Err(format!(
-                  "'{}' property must be a relation type, found: {:?}",
-                  things_column_name, location_property
-               ));
-            }
-         }
-      }
-      Err(err) => {
-         trace!(err = %err, "Failed to connect to things database");
-         return Err(format!("Failed to validate things database {}: {:?}", things_db, err));
-      }
-   }
-
-   match client.databases.retrieve_a_database(&containers_db).await {
-      Ok(schema) => debug!(?schema, "Successfully connected to containers database"),
-      Err(err) => {
-         return Err(format!(
-            "Failed to validate containers database {}: {:?}",
-            containers_db, err
-         ));
-      }
-   }
-   // trace!("Notion database response: {:?}", response);
    Ok((things_db, containers_db))
 }
 
