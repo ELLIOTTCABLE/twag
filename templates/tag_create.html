@@ -16,7 +16,11 @@
 {% endif %}
 >
    <label for="url">URL:</label>
-   <input type="text" id="url" name="target_url" required />
+   <input type="text" id="url" name="target_url" required
+   {% if let Some(target_url) = target_url %}
+      value="{{ target_url }}"
+   {% endif %} />
+   />
    <button type="submit">Create redirect</button>
 </form>
 

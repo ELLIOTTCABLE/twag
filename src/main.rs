@@ -211,6 +211,7 @@ struct TagCreateForm {
 struct TagCreateTemplate<'a> {
    id: &'a str,
    tap_count: &'a Option<String>,
+   target_url: &'a Option<String>,
 }
 
 async fn create_tag_page(
@@ -226,6 +227,7 @@ async fn create_tag_page(
    let page = TagCreateTemplate {
       id,
       tap_count: &tap_count.map(|c| format!("{:06X}", c)),
+      target_url,
    };
    let response = page.render().map_err(|e| {
       warn!("Failed to render template: {:?}", e);
