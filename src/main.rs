@@ -42,7 +42,7 @@ async fn validate_database_relation(
 ) -> Result<(), String> {
    match client.databases.retrieve_a_database(database_id).await {
       Ok(schema) => {
-         debug!(?schema, "Successfully connected to database");
+         debug!(?schema, "Successfully retrieved Notion database schema");
 
          // Validate the relation property exists and points to expected_target_db
          let property = schema
@@ -72,7 +72,7 @@ async fn validate_database_relation(
          }
       }
       Err(err) => {
-         debug!(err = %err, "Failed to connect to database");
+         debug!(err = %err, "Failed to retrieve Notion database");
          return Err(format!("Failed to validate database {}: {:?}", database_id, err));
       }
    }
