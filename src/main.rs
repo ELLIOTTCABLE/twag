@@ -168,6 +168,7 @@ async fn main() {
    let app_state = AppState { pool, client };
    let app = Router::new()
       .route("/", get(|| async { "Hello, World!" }))
+      .route("/healthz", get(health_check))
       // GET https://xz.ws/tag/create?id=055B88A23C1250&tap_count=00000F
       .route("/tag/create", get(create_tag_page))
       // POST https://xz.ws/tag/create?id=055B88A23C1250&tap_count=00000F: target_url=https://example.com
@@ -199,6 +200,13 @@ fn as_html(mut resp: Response) -> Response {
       .headers_mut()
       .insert(header::CONTENT_TYPE, "text/html; charset=utf-8".parse().unwrap());
    resp
+}
+
+async fn health_check(extract::State(state): extract::State<AppState>) -> StatusCode {
+   match sqlx::query("SELECT 1").fetch_one(&state.pool).await {
+      Ok(_) => StatusCode::OK,
+      Err(_) => StatusCode::SERVICE_UNAVAILABLE,
+   }
 }
 
 #[derive(Deserialize)]
