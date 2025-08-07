@@ -165,7 +165,10 @@ async fn main() {
    .unwrap();
    trace!(things_column, containers_column, "Validated Notion database relations");
 
-   let app_state = AppState { pool, client };
+   let app_state = AppState {
+      pool: pool.clone(),
+      client,
+   };
    let app = Router::new()
       .route("/", get(|| async { "Hello, World!" }))
       .route("/healthz", get(health_check))
@@ -192,7 +195,22 @@ async fn main() {
    let addr = format!("0.0.0.0:{}", port);
    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
    println!("Listening on http://{}", listener.local_addr().unwrap());
-   axum::serve(listener, app).await.unwrap();
+
+   let shutdown_signal = async move {
+      use tokio::signal::unix::{SignalKind, signal};
+      let mut sigterm = signal(SignalKind::terminate()).expect("Failed to install SIGTERM handler");
+      tokio::select! {
+         _ = tokio::signal::ctrl_c() => {},
+         _ = sigterm.recv() => {},
+      }
+      trace!("Shutdown signal received, closing database connections");
+      pool.close().await;
+   };
+
+   axum::serve(listener, app)
+      .with_graceful_shutdown(shutdown_signal)
+      .await
+      .unwrap();
 }
 
 fn as_html(mut resp: Response) -> Response {
