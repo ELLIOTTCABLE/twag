@@ -187,7 +187,9 @@ async fn main() {
             ),
       );
 
-   let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
+   let port = dotenvy::var("PORT").unwrap_or_else(|_| "3000".to_string());
+   let addr = format!("0.0.0.0:{}", port);
+   let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
    println!("Listening on http://{}", listener.local_addr().unwrap());
    axum::serve(listener, app).await.unwrap();
 }
