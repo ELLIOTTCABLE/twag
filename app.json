@@ -6,9 +6,10 @@
             "name": "database connectivity check",
             "description": "Checking if the app can connect to PostgreSQL",
             "path": "/healthz",
-            "timeout": 5,
+            "timeout": 10,
             "attempts": 3,
-            "wait": 5
+            "wait": 5,
+            "initialDelay": 5
          }
       ]
    }
