@@ -12,16 +12,16 @@ WORKDIR /usr/src/app
 # Copy manifests for dependency caching
 COPY Cargo.toml Cargo.lock ./
 
+# Copy source and build
+COPY src ./src
+COPY templates ./templates
+COPY migrations ./migrations
+
 # Copy SQLx offline compilation data (required for SQLX_OFFLINE=true)
 COPY .sqlx ./.sqlx
 
 # Fetch dependencies first for better layer caching
 RUN cargo fetch
-
-# Copy source and build
-COPY src ./src
-COPY templates ./templates
-COPY migrations ./migrations
 
 # Build with SQLx offline mode
 ENV SQLX_OFFLINE=true
