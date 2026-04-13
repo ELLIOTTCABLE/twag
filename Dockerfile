@@ -29,7 +29,7 @@ ENV SQLX_OFFLINE=true
 RUN cargo build --release
 
 # Runtime stage - use debian-slim with OpenSSL
-FROM debian:bookworm-slim
+FROM debian:trixie-slim
 
 RUN apt-get update && apt-get install -y \
    ca-certificates \
