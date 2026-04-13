@@ -1,5 +1,5 @@
 # Use the official Rust image with a pinned version
-FROM rust:1.83-slim AS builder
+FROM rust:1.94-slim AS builder
 
 # Install build dependencies including OpenSSL
 RUN apt-get update && apt-get install -y \
