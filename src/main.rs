@@ -7,7 +7,9 @@ use axum::{
    Router,
 };
 use lazy_regex::regex_captures;
-use notion_client::{endpoints::Client as Notion, objects::database::DatabaseProperty};
+use notion_client::{
+   endpoints::Client as Notion, objects::data_source::DataSource, objects::database::DatabaseProperty,
+};
 use serde::Deserialize;
 use serde_hex::{Compact, SerHexOpt};
 use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
@@ -35,46 +37,77 @@ async fn initialize_connection(database_url: &str) -> Result<Pool<Postgres>, sql
    Ok(pool)
 }
 
-async fn validate_database_relation(
+/// Retrieve the primary data-source for a Notion database.
+///
+/// Since API version 2025-09-03, database properties live on data-sources
+/// rather than on the database object itself. This retrieves the database to
+/// find its data-source IDs, then fetches the first data-source.
+async fn retrieve_data_source(
    client: &Notion,
    database_id: &NotionPageId,
+   data_source_id: &str,
+) -> Result<DataSource, String> {
+   // FIXME: once `notion-client` fixes Database deserialization for API >=
+   //    2025-09-03, discover the data_source_id from the database object
+   //    instead of requiring it as a parameter:
+   //
+   //     let db = client
+   //        .databases
+   //        .retrieve_a_database(database_id)
+   //        .await
+   //        .map_err(|err| format!("Failed to retrieve Database {}: {:?}", database_id, err))?;
+   //     let ds_ref = db
+   //        .data_sources
+   //        .first()
+   //        .ok_or_else(|| format!("Database {} has no DataSource", database_id))?;
+   //     let data_source_id = &ds_ref.id;
+
+   let ds = client
+      .data_sources
+      .retrieve_a_data_source(data_source_id)
+      .await
+      .map_err(|err| {
+         format!(
+            "Failed to retrieve DataSource {} for Database {}: {:?}",
+            data_source_id, database_id, err
+         )
+      })?;
+
+   debug!(?ds, "Retrieved DataSource for Database {}", database_id);
+   Ok(ds)
+}
+
+fn validate_relation_property(
+   data_source: &DataSource,
    property_name: &str,
    expected_target_db: &NotionPageId,
 ) -> Result<(), String> {
-   match client.databases.retrieve_a_database(database_id).await {
-      Ok(schema) => {
-         debug!(?schema, "Successfully retrieved Notion database schema");
+   let property = data_source
+      .properties
+      .get(property_name)
+      .ok_or_else(|| format!("Missing required property '{}' in DataSource", property_name))?;
 
-         // Validate the relation property exists and points to expected_target_db
-         let property = schema
-            .properties
-            .get(property_name)
-            .ok_or_else(|| format!("Missing required property '{}' in database", property_name))?;
+   match property {
+      DatabaseProperty::Relation { relation, .. } => {
+         let actual_db_id = relation
+            .database_id
+            .as_ref()
+            .ok_or_else(|| format!("'{}' relation has no database_id", property_name))?;
 
-         match property {
-            DatabaseProperty::Relation { relation, .. } => {
-               let actual_db_id = relation.database_id.as_ref().unwrap();
-
-               if actual_db_id != expected_target_db {
-                  return Err(format!(
-                     "'{}' property points to wrong database: expected {}, got {}",
-                     property_name, expected_target_db, actual_db_id
-                  ));
-               }
-
-               trace!("Validated '{}' property points to target database", property_name);
-            }
-            _ => {
-               return Err(format!(
-                  "'{}' property must be a relation type, found: {:?}",
-                  property_name, property
-               ));
-            }
+         if actual_db_id != expected_target_db {
+            return Err(format!(
+               "'{}' property points to wrong Database: expected {}, got {}",
+               property_name, expected_target_db, actual_db_id
+            ));
          }
+
+         trace!("Validated '{}' property points to target Database", property_name);
       }
-      Err(err) => {
-         debug!(err = %err, "Failed to retrieve Notion database");
-         return Err(format!("Failed to validate database {}: {:?}", database_id, err));
+      _ => {
+         return Err(format!(
+            "'{}' property must be a relation type, found: {:?}",
+            property_name, property
+         ));
       }
    }
    Ok(())
@@ -83,12 +116,17 @@ async fn validate_database_relation(
 async fn validate_notion_databases(
    client: &Notion,
    things_db: &NotionPageId,
+   things_ds_id: &str,
    containers_db: &NotionPageId,
+   containers_ds_id: &str,
    things_column_name: &str,
    containers_column_name: &str,
 ) -> Result<(), String> {
-   validate_database_relation(client, things_db, things_column_name, containers_db).await?;
-   validate_database_relation(client, containers_db, containers_column_name, things_db).await?;
+   let things_ds = retrieve_data_source(client, things_db, things_ds_id).await?;
+   let containers_ds = retrieve_data_source(client, containers_db, containers_ds_id).await?;
+
+   validate_relation_property(&things_ds, things_column_name, containers_db)?;
+   validate_relation_property(&containers_ds, containers_column_name, things_db)?;
 
    Ok(())
 }
@@ -147,6 +185,9 @@ async fn main() {
          .expect("Invalid NOTION_CONTAINERS_DB format");
    let containers_column =
       dotenvy::var("NOTION_CONTAINERS_COLUMN_NAME").expect("NOTION_CONTAINERS_COLUMN_NAME must be set");
+   // Data source IDs (required until notion-client supports the 2025-09-03 Database schema)
+   let things_ds_id = dotenvy::var("NOTION_THINGS_DS_ID").expect("NOTION_THINGS_DS_ID must be set");
+   let containers_ds_id = dotenvy::var("NOTION_CONTAINERS_DS_ID").expect("NOTION_CONTAINERS_DS_ID must be set");
 
    let pool = initialize_connection(&database_url)
       .await
@@ -158,7 +199,9 @@ async fn main() {
    validate_notion_databases(
       &client,
       &things_ndb,
+      &things_ds_id,
       &containers_ndb,
+      &containers_ds_id,
       &things_column,
       &containers_column,
    )
