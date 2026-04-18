@@ -1373,8 +1373,7 @@ checksum = "72ef4a56884ca558e5ddb05a1d1e7e1bfd9a68d9ed024c21704cc98872dae1bb"
 [[package]]
 name = "notion-client"
 version = "1.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5c0273f9414fe4d008b888e735b17752709592a8adefd62983218c845e8abf65"
+source = "git+https://github.com/ELLIOTTCABLE/rust-notion-client.git?branch=ec%2Ffix-db-icon-again#0e7500f096d8c0a737b02b31cbc5af110019f551"
 dependencies = [
  "chrono",
  "derive_builder",
