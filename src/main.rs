@@ -236,7 +236,10 @@ async fn main() {
             ),
       );
 
-   let port = dotenvy::var("PORT").unwrap_or_else(|_| "3000".to_string());
+   let port = dotenvy::var("PORT")
+      .ok()
+      .filter(|s| !s.is_empty())
+      .unwrap_or_else(|| "3000".to_string());
    let addr = format!("0.0.0.0:{}", port);
    let listener = tokio::net::TcpListener::bind(&addr).await.unwrap();
    println!("Listening on http://{}", listener.local_addr().unwrap());
