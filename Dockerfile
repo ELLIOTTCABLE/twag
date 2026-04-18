@@ -1,10 +1,8 @@
 # Use the official Rust image with a pinned version
 FROM rust:1.94-slim AS builder
 
-# Install build dependencies including OpenSSL
+# Install build dependencies
 RUN apt-get update && apt-get install -y \
-   pkg-config \
-   libssl-dev \
    ca-certificates \
    && rm -rf /var/lib/apt/lists/*
 
@@ -28,12 +26,11 @@ RUN cargo fetch
 ENV SQLX_OFFLINE=true
 RUN cargo build --release
 
-# Runtime stage - use debian-slim with OpenSSL
+# Runtime stage
 FROM debian:trixie-slim
 
 RUN apt-get update && apt-get install -y \
    ca-certificates \
-   libssl3 \
    && rm -rf /var/lib/apt/lists/*
 
 # Copy the binary from builder stage
