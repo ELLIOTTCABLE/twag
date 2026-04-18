@@ -22,13 +22,13 @@ use tracing::{debug, info, trace, warn, Level};
 mod models;
 use models::{Hex14, NotionPageId};
 
-async fn initialize_connection(database_url: &str) -> Result<Pool<Postgres>, sqlx::Error> {
-   info!(database_url, "Connecting to database");
+async fn initialize_connection(postgres_url: &str) -> Result<Pool<Postgres>, sqlx::Error> {
+   info!(postgres_url, "Connecting to Postgres");
    let pool = PgPoolOptions::new()
       .min_connections(1)
       .max_connections(5)
       .idle_timeout(std::time::Duration::from_secs(300))
-      .connect(database_url)
+      .connect(postgres_url)
       .await?;
 
    sqlx::query("SELECT 1").fetch_one(&pool).await?;
@@ -37,10 +37,10 @@ async fn initialize_connection(database_url: &str) -> Result<Pool<Postgres>, sql
    Ok(pool)
 }
 
-/// Retrieve the primary data-source for a Notion database.
+/// Retrieve the primary data-source for a Notion Database.
 ///
-/// Since API version 2025-09-03, database properties live on data-sources
-/// rather than on the database object itself. This retrieves the database to
+/// Since API version 2025-09-03, Database properties live on data-sources
+/// rather than on the Database object itself. This retrieves the Database to
 /// find its data-source IDs, then fetches the first data-source.
 async fn retrieve_data_source(
    client: &Notion,
@@ -48,7 +48,7 @@ async fn retrieve_data_source(
    data_source_id: &str,
 ) -> Result<DataSource, String> {
    // FIXME: once `notion-client` fixes Database deserialization for API >=
-   //    2025-09-03, discover the data_source_id from the database object
+   //    2025-09-03, discover the data_source_id from the Database object
    //    instead of requiring it as a parameter:
    //
    //     let db = client
@@ -116,14 +116,14 @@ fn validate_relation_property(
 async fn validate_notion_databases(
    client: &Notion,
    things_db: &NotionPageId,
-   things_ds_id: &str,
+   things_ds: &str,
    containers_db: &NotionPageId,
-   containers_ds_id: &str,
+   containers_ds: &str,
    things_column_name: &str,
    containers_column_name: &str,
 ) -> Result<(), String> {
-   let things_ds = retrieve_data_source(client, things_db, things_ds_id).await?;
-   let containers_ds = retrieve_data_source(client, containers_db, containers_ds_id).await?;
+   let things_ds = retrieve_data_source(client, things_db, things_ds).await?;
+   let containers_ds = retrieve_data_source(client, containers_db, containers_ds).await?;
 
    validate_relation_property(&things_ds, things_column_name, containers_db)?;
    validate_relation_property(&containers_ds, containers_column_name, things_db)?;
@@ -175,7 +175,7 @@ async fn main() {
    init_tracing();
 
    // TODO: Use a config library
-   let database_url = dotenvy::var("DATABASE_URL").expect("DATABASE_URL must be set");
+   let postgres_url = dotenvy::var("POSTGRES_URL").expect("POSTGRES_URL must be set");
    let notion_token = dotenvy::var("NOTION_TOKEN").expect("NOTION_TOKEN must be set");
    let things_ndb = NotionPageId::new(dotenvy::var("NOTION_THINGS_DB").expect("NOTION_THINGS_DB must be set"))
       .expect("Invalid NOTION_THINGS_DB format");
@@ -186,28 +186,29 @@ async fn main() {
    let containers_column =
       dotenvy::var("NOTION_CONTAINERS_COLUMN_NAME").expect("NOTION_CONTAINERS_COLUMN_NAME must be set");
    // Data source IDs (required until notion-client supports the 2025-09-03 Database schema)
-   let things_ds_id = dotenvy::var("NOTION_THINGS_DS_ID").expect("NOTION_THINGS_DS_ID must be set");
-   let containers_ds_id = dotenvy::var("NOTION_CONTAINERS_DS_ID").expect("NOTION_CONTAINERS_DS_ID must be set");
+   let things_nds = dotenvy::var("NOTION_THINGS_DS").expect("NOTION_THINGS_DS must be set (pending notion-client fix)");
+   let containers_nds =
+      dotenvy::var("NOTION_CONTAINERS_DS").expect("NOTION_CONTAINERS_DS must be set (pending notion-client fix)");
 
-   let pool = initialize_connection(&database_url)
+   let pool = initialize_connection(&postgres_url)
       .await
-      .expect("Failed to connect to database");
+      .expect("Failed to connect to Postgres");
 
    let client = Notion::new(notion_token.clone(), None).expect("Failed to create Notion client");
 
-   trace!(%things_ndb, %containers_ndb, "Parsed database IDs");
+   trace!(%things_ndb, %containers_ndb, "Parsed Database IDs");
    validate_notion_databases(
       &client,
       &things_ndb,
-      &things_ds_id,
+      &things_nds,
       &containers_ndb,
-      &containers_ds_id,
+      &containers_nds,
       &things_column,
       &containers_column,
    )
    .await
    .unwrap();
-   trace!(things_column, containers_column, "Validated Notion database relations");
+   trace!(things_column, containers_column, "Validated Database relations");
 
    let app_state = AppState {
       pool: pool.clone(),
@@ -247,7 +248,7 @@ async fn main() {
          _ = tokio::signal::ctrl_c() => {},
          _ = sigterm.recv() => {},
       }
-      trace!("Shutdown signal received, closing database connections");
+      trace!("Shutdown signal received, closing Postgres connections");
       pool.close().await;
    };
 
@@ -339,7 +340,7 @@ async fn create_tag(
    );
 
    let Ok(mut conn) = state.pool.acquire().await else {
-      warn!("Failed to acquire database connection");
+      warn!("Failed to acquire Postgres connection");
       return Err(StatusCode::INTERNAL_SERVER_ERROR);
    };
 
@@ -352,7 +353,7 @@ async fn create_tag(
    .execute(&mut *conn)
    .await
    .map_err(|e| {
-      warn!("Failed to create tag in database: {:?}", e);
+      warn!("Failed to create tag in Postgres: {:?}", e);
       StatusCode::INTERNAL_SERVER_ERROR
    })?;
 
@@ -378,7 +379,7 @@ async fn get_tag_by_id(
       .and_then(|s| i32::from_str_radix(s, 16).ok());
 
    let Ok(mut conn) = state.pool.acquire().await else {
-      warn!("Failed to acquire database connection");
+      warn!("Failed to acquire Postgres connection");
       return Err(StatusCode::INTERNAL_SERVER_ERROR);
    };
 
@@ -386,7 +387,7 @@ async fn get_tag_by_id(
       .fetch_optional(&mut *conn)
       .await
       .map_err(|e| {
-         warn!("Failed to fetch tag '{id}' from database: {:?}", e);
+         warn!("Failed to fetch tag '{id}' from Postgres: {:?}", e);
          StatusCode::INTERNAL_SERVER_ERROR
       })?;
 

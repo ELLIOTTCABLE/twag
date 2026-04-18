@@ -3,7 +3,7 @@
       "web": [
          {
             "type": "startup",
-            "name": "database connectivity check",
+            "name": "Postgres connectivity check",
             "description": "Checking if the app can connect to PostgreSQL",
             "path": "/healthz",
             "timeout": 10,

@@ -26,23 +26,23 @@ env = { RUST_LOG = "trace", RUST_FMT = "pretty", RUSTFLAGS = "-A dead_code -A un
 run = "cargo watch -w .env -w cargo.toml -w src -w templates --clear --exec 'run'"
 
 [tasks.db-auth]
-description = "Queries Neon for database creds"
+description = "Queries Neon for Postgres creds"
 outputs = [".env"]
 run = [
    "pwd",
-   "echo \"DATABASE_URL='$(neonctl connection-string dev/ec --database-name twag --role-name twag_admin)'\" >> .env",
+   "echo \"POSTGRES_URL='$(neonctl connection-string dev/ec --database-name twag --role-name twag_admin)'\" >> .env",
    "chmod 600 .env",
 ]
 
 [tasks.db-setup]
-description = "Initializes the database"
+description = "Initializes Postgres"
 depends = ["db-auth"]
 sources = [".env", "migrations/*.sql"]
 env = { RUST_LOG = "trace" }
-run = "pwd && cd .. && sqlx database setup"
+run = "pwd && cd .. && sqlx --database-url \"$POSTGRES_URL\" database setup"
 
 [tasks.sqlx-prepare]
 description = "Cache schema for SQLx typechecking"
 depends = ["db-auth"]
 sources = [".env"]
-run = "pwd && cargo sqlx prepare"
+run = "pwd && DATABASE_URL=\"$POSTGRES_URL\" cargo sqlx prepare"

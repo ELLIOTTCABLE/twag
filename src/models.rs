@@ -94,7 +94,7 @@ impl std::borrow::Borrow<str> for Hex14 {
    fn borrow(&self) -> &str { &self.0 }
 }
 
-/// A type representing a Notion page/database ID with validation and parsing from URLs.
+/// A type representing a Notion page/Database ID with validation and parsing from URLs.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Deserialize, Serialize)]
 pub struct NotionPageId(String);
 
