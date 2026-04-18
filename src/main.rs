@@ -1,20 +1,21 @@
 use askama::Template;
 use axum::{
-   Router, extract,
-   http::{StatusCode, header},
+   extract,
+   http::{header, StatusCode},
    response::{IntoResponse, Response},
    routing::{get, post},
+   Router,
 };
 use lazy_regex::regex_captures;
 use notion_client::{endpoints::Client as Notion, objects::database::DatabaseProperty};
 use serde::Deserialize;
 use serde_hex::{Compact, SerHexOpt};
-use sqlx::{Pool, Postgres, postgres::PgPoolOptions};
+use sqlx::{postgres::PgPoolOptions, Pool, Postgres};
 use tower_http::{
-   LatencyUnit,
    trace::{DefaultMakeSpan, DefaultOnRequest, DefaultOnResponse, TraceLayer},
+   LatencyUnit,
 };
-use tracing::{Level, debug, info, trace, warn};
+use tracing::{debug, info, trace, warn, Level};
 
 mod models;
 use models::{Hex14, NotionPageId};
@@ -93,7 +94,7 @@ async fn validate_notion_databases(
 }
 
 fn init_tracing() {
-   use tracing_subscriber::{EnvFilter, fmt};
+   use tracing_subscriber::{fmt, EnvFilter};
 
    let filter = EnvFilter::builder()
       .with_default_directive(match dotenvy::var("RUST_FMT").as_deref() {
@@ -197,7 +198,7 @@ async fn main() {
    println!("Listening on http://{}", listener.local_addr().unwrap());
 
    let shutdown_signal = async move {
-      use tokio::signal::unix::{SignalKind, signal};
+      use tokio::signal::unix::{signal, SignalKind};
       let mut sigterm = signal(SignalKind::terminate()).expect("Failed to install SIGTERM handler");
       tokio::select! {
          _ = tokio::signal::ctrl_c() => {},
