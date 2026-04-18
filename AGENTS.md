@@ -40,3 +40,37 @@ System shape: single Axum binary (`src/main.rs`) with domain/parsing types in `s
 -  Indentation: three spaces per level. If an existing file uses a different style, match local style to avoid unrelated diffs; prefer three spaces for new files.
 
 Open areas (don’t implement without discussion): multi‑tap mutation + undo mechanics; post‑redirect reconciliation strategy (poll/webhook/hybrid); structured tracing span taxonomy and OpenTelemetry export; minimal mobile interstitial styling.
+
+### 4) Contribution / commit hygiene
+
+-  Prefer granular, single‑concern commits. Each commit should introduce exactly one logical change (e.g., cache env vars in `AppState` separate from adding Notion lookup enums).
+-  Do not mix refactors with behavior changes unless inseparable; if inseparable, document why in the commit body.
+-  Preserve narrative history; avoid squashing unless the intermediate steps add zero archaeological value.
+-  Stage intentionally: review `git diff --staged` before committing to ensure scope purity.
+
+Commit messages should be short, with an imperative subject line and optional body paragraphs. The subject should be very concise, ideally under 50 characters including the labels, and the body should explain the "why" behind the change (if necessary; this is rarely used in practice, as code should be self-documenting).
+
+This repository uses the `.gitlabels` system (see root `.gitlabels`) rather than Conventional Commits. Commit subjects begin with a parenthetical label block containing one or more space‑separated labels (and optional payloads) describing orthogonal facets of the change, e.g.:
+
+```
+(AI new SQL) Add initial migration for tag storage
+```
+
+Key points:
+
+-  Multiple labels are normal; choose all that materially describe the change (feature vs refactor vs infra vs sql, etc.). Order from broader → more specific.
+-  Low‑impact change can include `(-)` in addition to other labels to allow consumers to filter it out. Since we like small, granular commits, about 60-80% of commits should start with `(- ...`.
+-  ALWAYS include the label `(AI)` with your changes. This helps distinguish AI contributions from human ones.
+-  Do NOT use Conventional Commit forms like `feat:` / `fix:` – they are incompatible noise here.
+-  Split commits if you are tempted to use disjoint label clusters (e.g. `(new)` plus `(re)`); each commit should remain single‑concern.
+-  Read and respect the canonical aliases and hierarchy in `.gitlabels`; add new labels only via a dedicated, reviewed commit amending that file.
+
+Minimal template for a new commit:
+
+```
+(AI label1 label2 ...) Imperative summary of what changed
+
+<Optional longer explanatory body paragraphs as needed>
+```
+
+When in doubt: re‑read `.gitlabels` and choose the smallest sufficient label set. If uncertain between `(re)` vs `(fix)`: ask or split.
