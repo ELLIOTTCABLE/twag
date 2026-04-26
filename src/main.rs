@@ -23,12 +23,19 @@ mod models;
 use models::{Hex14, NotionPageId};
 
 async fn initialize_connection(postgres_url: &str) -> Result<Pool<Postgres>, sqlx::Error> {
-   info!(postgres_url, "Connecting to Postgres");
+   let options: sqlx::postgres::PgConnectOptions = postgres_url.parse()?;
+   info!(
+      host = options.get_host(),
+      database = ?options.get_database(),
+      username = options.get_username(),
+      "Connecting to Postgres"
+   );
+
    let pool = PgPoolOptions::new()
       .min_connections(1)
       .max_connections(5)
       .idle_timeout(std::time::Duration::from_secs(300))
-      .connect(postgres_url)
+      .connect_with(options)
       .await?;
 
    sqlx::query("SELECT 1").fetch_one(&pool).await?;
@@ -168,14 +175,14 @@ struct AppState {
 
 #[tokio::main]
 async fn main() {
-   if dotenvy::from_filename(".env").is_err() {
-      dotenvy::dotenv().ok();
-   }
+   dotenvy::dotenv().ok();
 
    init_tracing();
 
    // TODO: Use a config library
-   let postgres_url = dotenvy::var("POSTGRES_URL").expect("POSTGRES_URL must be set");
+   // `DATABASE_URL` is the cross-ecosystem env-var convention (sqlx, Dokku, etc.);
+   // elsewhere in twag, "database" refers to a Notion database (see `NOTION_*_DB`).
+   let postgres_url = dotenvy::var("DATABASE_URL").expect("DATABASE_URL must be set");
    let notion_token = dotenvy::var("NOTION_TOKEN").expect("NOTION_TOKEN must be set");
    let things_ndb = NotionPageId::new(dotenvy::var("NOTION_THINGS_DB").expect("NOTION_THINGS_DB must be set"))
       .expect("Invalid NOTION_THINGS_DB format");

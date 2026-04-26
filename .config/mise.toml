@@ -25,24 +25,59 @@ description = "Watches for changes in the source code and runs the server"
 env = { RUST_LOG = "trace", RUST_FMT = "pretty", RUSTFLAGS = "-A dead_code -A unused_variables -A unused_imports" }
 run = "cargo watch -w .env -w cargo.toml -w src -w templates --clear --exec 'run'"
 
-[tasks.db-auth]
-description = "Queries Neon for Postgres creds"
-outputs = [".env"]
+[tasks."db:cache-typechecking"]
+description = "Cache schema from $DATABASE_URL for SQLx typechecking"
+run = "cargo sqlx prepare"
+
+[tasks."db:provision"]
+description = "Applies provisioning/grants.sql against $DATABASE_URL. Run once before db:migrate; idempotent."
+sources = ["provisioning/*.sql"]
+run = "psql \"$DATABASE_URL\" -v ON_ERROR_STOP=1 -f provisioning/grants.sql"
+
+[tasks."db:migrate"]
+description = "Runs sqlx migrations against $DATABASE_URL"
+sources = ["migrations/*.sql"]
+run = "sqlx migrate run"
+
+# --- Neon-specific local-dev convenience ---
+# Wrap the universal db: tasks with a fetched twag_owner cred, passed inline
+# via env-var (never persisted, never argv). neon:auth, by contrast, writes
+# the *runtime* (twag_app) cred to .env so the app and other tools see it.
+
+[tasks."neon:create"]
+description = "Create the Neon project + twag_app role; no-op if `.neon` exists"
+outputs = [".neon"]
+run = """
+if [ ! -f .neon ]; then
+   neonctl -o json project create --set-context --name 'twag' --database 'twag' --role 'twag_owner' --cu 0.5 \
+      | jq '{project: {id: .project.id, region_id: .project.region_id, name: .project.name}}' | { command -v yq >/dev/null && yq -y . || cat ;}
+   neonctl -o json roles create --name 'twag_app' \
+      | jq '{branch_id, name, authentication_method}' | { command -v yq >/dev/null && yq -y . || cat ;}
+fi
+"""
+
+[tasks."neon:_assert-context"]
+hide = true
+run = """
+if [ ! -f .neon ]; then
+   echo 'No `.neon` context found; run `neonctl set-context` (or `mise run neon:create`) first.' >&2
+   exit 1
+fi
+"""
+
+[tasks."neon:provision"]
+depends = ["neon:_assert-context"]
+run = "DATABASE_URL=\"$(neonctl connection-string --role-name twag_owner)\" mise run db:provision"
+
+[tasks."neon:migrate"]
+depends = ["neon:_assert-context"]
+run = "DATABASE_URL=\"$(neonctl connection-string --role-name twag_owner)\" mise run db:migrate"
+
+[tasks."neon:auth"]
+description = "Fetches the runtime (twag_app) Neon connection-string into .env"
+depends = ["neon:_assert-context"]
 run = [
-   "pwd",
-   "echo \"POSTGRES_URL='$(neonctl connection-string dev/ec --database-name twag --role-name twag_admin)'\" >> .env",
+   "sed -i.bak '/^DATABASE_URL=/d' .env 2>/dev/null; rm -f .env.bak",
+   "echo \"DATABASE_URL='$(neonctl connection-string --role-name twag_app)'\" >> .env",
    "chmod 600 .env",
 ]
-
-[tasks.db-setup]
-description = "Initializes Postgres"
-depends = ["db-auth"]
-sources = [".env", "migrations/*.sql"]
-env = { RUST_LOG = "trace" }
-run = "pwd && cd .. && sqlx --database-url \"$POSTGRES_URL\" database setup"
-
-[tasks.sqlx-prepare]
-description = "Cache schema for SQLx typechecking"
-depends = ["db-auth"]
-sources = [".env"]
-run = "pwd && DATABASE_URL=\"$POSTGRES_URL\" cargo sqlx prepare"
