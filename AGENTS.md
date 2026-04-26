@@ -30,6 +30,8 @@ System shape: single Axum binary (`src/main.rs`) with domain/parsing types in `s
 
 ### 3) Code style, taste, and preferences
 
+- Do not write novel documentation unless explicitly asked; models overwhelmingly write verbose, slop-flavoured documentation. Instead, when work introduces new changes that are not self-documenting, pause and describe the documentation you *would* write to the user, and ask them to document as appropriate before continuing. Check their work as appropriate for correctness to ensure nothing is lost in translation
+  - Feel free to make small *correctness* fixes to documentation (i.e. changing a command-name); just don't write whole-cloth prose yourself
 - An absent comment is better than an unnecessary comment. Comments (when present at all) should explain “why,” not “what” or “how.” Prefer clear variable/function names and self-documenting code practices over inline commentary.
 - Normalize and validate at boundaries; inside the code, assume invariants. Prefer small, explicit functions over generic abstractions until repetition is real.
 - Tests should be explicit and W.E.T., located with the types they exercise (e.g., `models.rs`). Add fuzz/property tests where they materially increase confidence in parsers/normalizers. Defer E2E until the multi‑tap state or background reconciliation exists.
