@@ -16,6 +16,12 @@ local linters = new Mapping<String, Step> {
         glob = "*.pkl"
         check = "pkl eval {{files}} >/dev/null"
     }
+
+    ["sqlx"] {
+        glob = List("*.rs", "migrations/*.sql", ".sqlx/*.json")
+        workspace_indicator = "Cargo.toml"
+        check = "scripts/sqlx-check.sh"
+    }
 }
 
 hooks {
